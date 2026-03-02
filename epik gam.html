@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>FNAF Style Game - Multi Cam</title>
+<style>
+    body {
+        margin: 0;
+        background: black;
+        overflow: hidden;
+        font-family: Arial, sans-serif;
+        color: white;
+    }
+
+    canvas {
+        display: block;
+        background: black;
+    }
+
+    #status {
+        position: absolute;
+        top: 10px;
+        left: 10px;
+        font-size: 18px;
+    }
+
+    #controls {
+        position: absolute;
+        bottom: 10px;
+        left: 10px;
+    }
+
+    button {
+        padding: 6px;
+        margin: 3px;
+        background: #222;
+        color: white;
+        border: 1px solid white;
+        cursor: pointer;
+    }
+
+    button:hover {
+        background: #444;
+    }
+</style>
+</head>
+
+<body>
+
+<canvas id="gameCanvas"></canvas>
+
+<div id="status">
+    Power: <span id="power">100</span>% |
+    Time: <span id="time">12 AM</span> |
+    View: <span id="viewLabel">OFFICE</span>
+</div>
+
+<div id="controls">
+    <button onclick="toggleLeftDoor()">Left Door</button>
+    <button onclick="toggleRightDoor()">Right Door</button>
+    <button onclick="toggleCamera()">Toggle Camera</button>
+    <button onclick="setCamera('1A')">1A</button>
+    <button onclick="setCamera('1B')">1B</button>
+    <button onclick="setCamera('2A')">2A</button>
+    <button onclick="setCamera('2B')">2B</button>
+    <button onclick="setCamera('CAM-L')">CAM-L</button>
+    <button onclick="setCamera('CAM-R')">CAM-R</button>
+</div>
+
+<script>
+const canvas = document.getElementById("gameCanvas");
+const ctx = canvas.getContext("2d");
+
+canvas.width = window.innerWidth;
+canvas.height = window.innerHeight;
+
+let power = 100;
+let hour = 0;
+let cameraOn = false;
+let currentCam = "OFFICE";
+
+let leftDoorClosed = false;
+let rightDoorClosed = false;
+
+const camOrder = ["1A","1B","2A","2B","CAM-L","CAM-R"];
+let animatronicIndex = 0;
+
+// ================= CONTROLS =================
+
+function toggleLeftDoor() {
+    if (power <= 0) return;
+    leftDoorClosed = !leftDoorClosed;
+}
+
+function toggleRightDoor() {
+    if (power <= 0) return;
+    rightDoorClosed = !rightDoorClosed;
+}
+
+function toggleCamera() {
+    if (power <= 0) return;
+    cameraOn = !cameraOn;
+    currentCam = cameraOn ? "1A" : "OFFICE";
+}
+
+function setCamera(cam) {
+    if (cameraOn) currentCam = cam;
+}
+
+// ================= POWER =================
+
+function updatePower() {
+    let drain = 0.05;
+    if (leftDoorClosed) drain += 0.15;
+    if (rightDoorClosed) drain += 0.15;
+    if (cameraOn) drain += 0.1;
+
+    power -= drain;
+    if (power < 0) power = 0;
+
+    document.getElementById("power").innerText = Math.floor(power);
+
+    if (power === 0) {
+        leftDoorClosed = false;
+        rightDoorClosed = false;
+    }
+}
+
+// ================= TIME =================
+
+function updateTime() {
+    hour++;
+    document.getElementById("time").innerText = (hour + 12 > 12 ? hour : 12) + " AM";
+
+    if (hour >= 6) {
+        alert("6 AM! You Survived!");
+        location.reload();
+    }
+}
+
+// ================= AI =================
+
+function moveAnimatronic() {
+
+    if (Math.random() < 0.4 && animatronicIndex < camOrder.length - 1) {
+        animatronicIndex++;
+    }
+
+    let pos = camOrder[animatronicIndex];
+
+    // Attack logic
+    if (pos === "CAM-L" && !leftDoorClosed && !cameraOn) {
+        jumpscare();
+    }
+
+    if (pos === "CAM-R" && !rightDoorClosed && !cameraOn) {
+        jumpscare();
+    }
+}
+
+// ================= DRAWING =================
+
+function drawOffice() {
+    // Dark office background
+    ctx.fillStyle = "#1a1a1a";
+    ctx.fillRect(0,0,canvas.width,canvas.height);
+
+    // Back wall
+    ctx.fillStyle = "#2b2b2b";
+    ctx.fillRect(canvas.width/2 - 400, 100, 800, 400);
+
+    // Desk
+    ctx.fillStyle = "#3a3a3a";
+    ctx.fillRect(canvas.width/2 - 250, canvas.height - 200, 500, 150);
+
+    // Fan
+    ctx.fillStyle = "gray";
+    ctx.beginPath();
+    ctx.arc(canvas.width/2, canvas.height - 170, 30, 0, Math.PI*2);
+    ctx.fill();
+
+    // Left Door
+    if (leftDoorClosed) {
+        ctx.fillStyle = "#555";
+        ctx.fillRect(0, 0, 120, canvas.height);
+    }
+
+    // Right Door
+    if (rightDoorClosed) {
+        ctx.fillStyle = "#555";
+        ctx.fillRect(canvas.width - 120, 0, 120, canvas.height);
+    }
+
+    ctx.fillStyle = "white";
+    ctx.font = "28px Arial";
+    ctx.fillText("Office", canvas.width/2 - 50, 60);
+}
+
+function drawCamera() {
+    ctx.fillStyle = "#111";
+    ctx.fillRect(0,0,canvas.width,canvas.height);
+
+    // Static
+    for (let i=0;i<300;i++) {
+        ctx.fillStyle = Math.random() > 0.5 ? "#222" : "#333";
+        ctx.fillRect(Math.random()*canvas.width, Math.random()*canvas.height, 2,2);
+    }
+
+    ctx.fillStyle = "lime";
+    ctx.font = "28px Arial";
+    ctx.fillText("Camera " + currentCam, 40, 50);
+
+    // Animatronic visible if on this cam
+    if (camOrder[animatronicIndex] === currentCam) {
+
+        ctx.fillStyle = "purple";
+        ctx.fillRect(canvas.width/2 - 80, canvas.height/2 - 100, 160, 200);
+
+        ctx.fillStyle = "white";
+        ctx.fillRect(canvas.width/2 - 35, canvas.height/2 - 40, 20, 20);
+        ctx.fillRect(canvas.width/2 + 15, canvas.height/2 - 40, 20, 20);
+    }
+}
+
+// ================= JUMPSCARE =================
+
+function jumpscare() {
+    ctx.fillStyle = "red";
+    ctx.fillRect(0,0,canvas.width,canvas.height);
+
+    ctx.fillStyle = "black";
+    ctx.font = "100px Arial";
+    ctx.fillText("YOU DIED", canvas.width/2 - 250, canvas.height/2);
+
+    setTimeout(() => location.reload(), 2000);
+}
+
+// ================= GAME LOOP =================
+
+function gameLoop() {
+    ctx.clearRect(0,0,canvas.width,canvas.height);
+
+    if (cameraOn) {
+        drawCamera();
+    } else {
+        drawOffice();
+    }
+
+    document.getElementById("viewLabel").innerText = currentCam;
+
+    requestAnimationFrame(gameLoop);
+}
+
+setInterval(updatePower, 100);
+setInterval(updateTime, 10000);
+setInterval(moveAnimatronic, 3000);
+
+gameLoop();
+</script>
+
+</body>
+</html>
+
+

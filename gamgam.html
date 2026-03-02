@@ -1,0 +1,1887 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Factory Drift – Drills & Inspect Popup</title>
+  <style>
+    body {
+      margin: 0;
+      background: #111;
+      color: #eee;
+      font-family: sans-serif;
+      display: flex;
+      height: 100vh;
+      overflow: hidden;
+    }
+    #ui {
+      width: 320px;
+      background: #1b1b1b;
+      padding: 10px;
+      box-sizing: border-box;
+      border-right: 2px solid #333;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      z-index: 1;
+      overflow-y: auto;
+    }
+    #gameContainer {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      background: #000;
+      position: relative;
+    }
+    #topBar {
+      height: 40px;
+      background: #222;
+      color: #eee;
+      display: flex;
+      align-items: center;
+      padding: 0 10px;
+      box-sizing: border-box;
+      font-size: 13px;
+      justify-content: space-between;
+      z-index: 1;
+    }
+    #canvasContainer {
+      flex: 1;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      position: relative;
+    }
+    canvas {
+      background: #202020;
+      image-rendering: pixelated;
+      border: 1px solid #444;
+    }
+    .sectionTitle {
+      font-weight: bold;
+      margin-top: 4px;
+      border-bottom: 1px solid #333;
+      padding-bottom: 2px;
+      font-size: 13px;
+    }
+    .statLine {
+      font-size: 12px;
+      display: flex;
+      justify-content: space-between;
+    }
+    .buttonRow {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px;
+      margin-bottom: 4px;
+    }
+    button {
+      background: #333;
+      color: #eee;
+      border: 1px solid #555;
+      padding: 4px 6px;
+      font-size: 11px;
+      cursor: pointer;
+    }
+    button:disabled {
+      opacity: 0.4;
+      cursor: default;
+    }
+    .selectedTool {
+      border-color: #ffb300;
+      color: #ffb300;
+    }
+    #log {
+      background: #111;
+      border: 1px solid #333;
+      font-size: 11px;
+      padding: 4px;
+      overflow-y: auto;
+      white-space: pre-line;
+      max-height: 160px;
+    }
+    #techTabs {
+      display: flex;
+      gap: 4px;
+      margin-bottom: 4px;
+      flex-wrap: wrap;
+    }
+    .techTab {
+      flex: 1;
+      text-align: center;
+      padding: 3px 0;
+      font-size: 11px;
+      background: #222;
+      border: 1px solid #444;
+      cursor: pointer;
+    }
+    .techTab.active {
+      background: #444;
+      border-color: #ffb300;
+      color: #ffb300;
+    }
+    #techList {
+      max-height: 180px;
+      overflow-y: auto;
+      border: 1px solid #333;
+      padding: 4px;
+      font-size: 11px;
+    }
+    .techItem {
+      margin-bottom: 4px;
+      border-bottom: 1px dashed #333;
+      padding-bottom: 2px;
+    }
+    .techItem span {
+      display: block;
+    }
+
+    /* Title screen */
+    #titleScreen {
+      position: absolute;
+      inset: 0;
+      background: radial-gradient(circle at top, #222 0, #050505 60%);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      color: #eee;
+      z-index: 10;
+      transition: opacity 0.6s ease;
+    }
+    #titleScreen.hidden {
+      opacity: 0;
+      pointer-events: none;
+    }
+    #titleTitle {
+      font-size: 32px;
+      letter-spacing: 2px;
+      margin-bottom: 10px;
+      text-transform: uppercase;
+      color: #ffb300;
+    }
+    #titleSubtitle {
+      font-size: 13px;
+      color: #aaa;
+      margin-bottom: 30px;
+    }
+    #titleButtons {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .titleButton {
+      min-width: 160px;
+      padding: 8px 12px;
+      font-size: 13px;
+      text-align: center;
+      background: #333;
+      border: 1px solid #555;
+      cursor: pointer;
+    }
+    .titleButton:hover {
+      background: #444;
+    }
+    #titleFooter {
+      position: absolute;
+      bottom: 20px;
+      font-size: 11px;
+      color: #666;
+    }
+
+    /* Inspect popup */
+    #inspectPopup {
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.55);
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      z-index: 50;
+    }
+    #inspectPopup.hidden {
+      display: none;
+    }
+    #inspectWindow {
+      width: 260px;
+      background: #222;
+      border: 2px solid #555;
+      padding: 10px;
+      box-shadow: 0 0 20px #000;
+    }
+    #inspectHeader {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 8px;
+    }
+    #inspectHeader button {
+      background: #444;
+      border: 1px solid #666;
+      color: #eee;
+      cursor: pointer;
+      padding: 2px 6px;
+    }
+    #inspectContent {
+      font-size: 12px;
+      line-height: 1.4;
+    }
+    .inspectButton {
+      margin-top: 6px;
+      width: 100%;
+      padding: 4px;
+      background: #333;
+      border: 1px solid #555;
+      color: #eee;
+      cursor: pointer;
+    }
+  </style>
+</head>
+<body>
+  <div id="ui">
+    <div>
+      <div class="sectionTitle">Stats</div>
+      <div class="statLine"><span>Iron Ore:</span><span id="statIronOre">0</span></div>
+      <div class="statLine"><span>Iron Ingot:</span><span id="statIronIngot">0</span></div>
+      <div class="statLine"><span>Plates:</span><span id="statPlate">0</span></div>
+      <div class="statLine"><span>Rods:</span><span id="statRod">0</span></div>
+      <div class="statLine"><span>Reinf. Plates:</span><span id="statReinf">0</span></div>
+      <div class="statLine"><span>Frames:</span><span id="statFrame">0</span></div>
+      <div class="statLine"><span>Control Units:</span><span id="statCU">0</span></div>
+      <div class="statLine"><span>Coal:</span><span id="statCoal">0</span></div>
+      <div class="statLine"><span>Power:</span><span id="statPower">0 / 0</span></div>
+      <div class="statLine"><span>Research Points:</span><span id="statRP">0</span></div>
+    </div>
+
+    <div>
+      <div class="sectionTitle">Build tools</div>
+      <div class="buttonRow" id="coreToolsRow">
+        <button id="toolInspect">Inspect</button>
+        <button id="toolDelete">Delete</button>
+      </div>
+      <div class="buttonRow" id="buildButtons"></div>
+      <div style="font-size:11px;margin-top:4px;">
+        Left-click to place, right-click to cancel. Must be near the player. Press R to rotate belts.
+      </div>
+    </div>
+
+    <div>
+      <div class="sectionTitle">Tech tree</div>
+      <div id="techTabs">
+        <div class="techTab active" data-cat="production">Production</div>
+        <div class="techTab" data-cat="power">Power</div>
+        <div class="techTab" data-cat="logistics">Logistics</div>
+        <div class="techTab" data-cat="drills">Drills</div>
+      </div>
+      <div id="techList"></div>
+    </div>
+
+    <div>
+      <div class="sectionTitle">Save / Load</div>
+      <div class="buttonRow">
+        <button id="btnSave">Save Game</button>
+        <button id="btnLoad">Load Game</button>
+        <button id="btnClearSave">Clear Save</button>
+      </div>
+      <div style="font-size:11px;margin-top:2px;">
+        Saves to your browser (localStorage). One slot for now.
+      </div>
+    </div>
+
+    <div>
+      <div class="sectionTitle">Log</div>
+      <div id="log"></div>
+    </div>
+  </div>
+
+  <div id="gameContainer">
+    <div id="topBar">
+      <span>Factory Drift – Drills & Tech</span>
+      <span>WASD to move, E to mine, mouse wheel to zoom</span>
+    </div>
+    <div id="canvasContainer">
+      <canvas id="gameCanvas" width="640" height="480"></canvas>
+
+      <!-- Title screen overlay -->
+      <div id="titleScreen">
+        <div id="titleTitle">Factory Drift</div>
+        <div id="titleSubtitle">Burner drills, power, and automation</div>
+        <div id="titleButtons">
+          <button class="titleButton" id="btnNewGame">New Game</button>
+          <button class="titleButton" id="btnQuit" disabled>Quit (placeholder)</button>
+        </div>
+        <div id="titleFooter">Mine by hand · Unlock drills · Build your first power grid</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Inspect popup -->
+  <div id="inspectPopup" class="hidden">
+    <div id="inspectWindow">
+      <div id="inspectHeader">
+        <span id="inspectTitle">Building</span>
+        <button id="inspectClose">X</button>
+      </div>
+      <div id="inspectContent"></div>
+    </div>
+  </div>
+
+  <script>
+    // --- Basic world setup ---
+    const canvas = document.getElementById("gameCanvas");
+    const ctx = canvas.getContext("2d");
+
+    const TILE_SIZE_BASE = 24;
+    let zoom = 1;
+
+    const WORLD_W = 50;
+    const WORLD_H = 40;
+
+    const TILE_EMPTY = 0;
+    const TILE_IRON = 1;
+    const TILE_COAL = 2;
+
+    let world = [];
+    function generateWorld() {
+      world = [];
+      for (let y = 0; y < WORLD_H; y++) {
+        const row = [];
+        for (let x = 0; x < WORLD_W; x++) {
+          let t = TILE_EMPTY;
+          if ((x > 5 && x < 12 && y > 5 && y < 12) ||
+              (x > 20 && x < 27 && y > 18 && y < 25) ||
+              (x > 35 && x < 42 && y > 8 && y < 15)) {
+            t = TILE_IRON;
+          }
+          if ((x > 8 && x < 14 && y > 25 && y < 32) ||
+              (x > 30 && x < 37 && y > 28 && y < 35)) {
+            t = TILE_COAL;
+          }
+          row.push(t);
+        }
+        world.push(row);
+      }
+    }
+    generateWorld();
+
+    // --- Player ---
+    const player = {
+      x: 10.5,
+      y: 10.5,
+      speed: 6,
+      size: 0.9
+    };
+
+    const keys = { w: false, a: false, s: false, d: false };
+    let keyE = false;
+
+    // --- Buildings & entities ---
+    const BUILD_NONE = "none";
+    const BUILD_MINER = "miner"; // legacy
+    const BUILD_SMELTER = "smelter";
+    const BUILD_PLATE_ASM = "plate_asm";
+    const BUILD_ROD_ASM = "rod_asm";
+    const BUILD_REINF_ASM = "reinf_asm";
+    const BUILD_FRAME_CONST = "frame_const";
+    const BUILD_CU_ASM = "cu_asm";
+    const BUILD_GEN1 = "gen1";
+    const BUILD_GEN2 = "gen2";
+    const BUILD_GEN3 = "gen3";
+    const BUILD_SOLAR = "solar";
+    const BUILD_STORAGE = "storage";
+    const BUILD_BELT = "belt";
+    const BUILD_SPLITTER = "splitter";
+    const BUILD_MERGER = "merger";
+    const BUILD_DELETE = "delete";
+
+    const BUILD_BURNER_DRILL = "burner_drill";
+    const BUILD_ELECTRIC_DRILL = "electric_drill";
+    const BUILD_ADV_DRILL = "advanced_drill";
+    const BUILD_HEAVY_DRILL = "heavy_drill";
+    const BUILD_BATTERY_DRILL = "battery_drill";
+
+    let selectedTool = BUILD_NONE;
+    let beltPreviewDir = "E";
+
+    let buildings = [];
+    let nextBuildingId = 1;
+
+    // --- Resources & power ---
+    const resources = {
+      ironOre: 0,
+      ironIngot: 0,
+      plate: 0,
+      rod: 0,
+      reinfPlate: 0,
+      frame: 0,
+      controlUnit: 0,
+      coal: 0,
+      researchPoints: 0
+    };
+
+    let totalPowerGen = 0;
+    let totalPowerUse = 0;
+
+    // --- Tech tree ---
+    const techs = [
+      // Production
+      {
+        id: "tech_smelter",
+        name: "Smelting",
+        desc: "Unlocks Smelter (Iron Ore → Iron Ingots).",
+        cost: 10,
+        unlocked: false,
+        category: "production",
+        apply: () => {
+          unlockedBuildings.smelter = true;
+          addUnlockedBuildButton("smelter");
+          log("Tech unlocked: Smelting. Smelter available.");
+        }
+      },
+      {
+        id: "tech_basic_assembly",
+        name: "Basic Assembly",
+        desc: "Unlocks Plate Assembler (Ingots → Plates).",
+        cost: 25,
+        unlocked: false,
+        category: "production",
+        apply: () => {
+          unlockedBuildings.plateAsm = true;
+          addUnlockedBuildButton("plate_asm");
+          log("Tech unlocked: Basic Assembly. Plate Assembler available.");
+        }
+      },
+      {
+        id: "tech_rods",
+        name: "Iron Rods",
+        desc: "Unlocks Rod Assembler (Ingots → Rods).",
+        cost: 40,
+        unlocked: false,
+        category: "production",
+        apply: () => {
+          unlockedBuildings.rodAsm = true;
+          addUnlockedBuildButton("rod_asm");
+          log("Tech unlocked: Iron Rods. Rod Assembler available.");
+        }
+      },
+      {
+        id: "tech_reinf",
+        name: "Reinforced Plates",
+        desc: "Unlocks Reinforced Plate Assembler (Plates + Rods → Reinf Plates).",
+        cost: 60,
+        unlocked: false,
+        category: "production",
+        apply: () => {
+          unlockedBuildings.reinfAsm = true;
+          addUnlockedBuildButton("reinf_asm");
+          log("Tech unlocked: Reinforced Plates. Reinf Plate Assembler available.");
+        }
+      },
+      {
+        id: "tech_frames",
+        name: "Modular Frames",
+        desc: "Unlocks Frame Constructor (Reinf Plates + Rods → Frames).",
+        cost: 120,
+        unlocked: false,
+        category: "production",
+        apply: () => {
+          unlockedBuildings.frameConst = true;
+          addUnlockedBuildButton("frame_const");
+          log("Tech unlocked: Modular Frames. Frame Constructor available.");
+        }
+      },
+      {
+        id: "tech_cu",
+        name: "Control Units",
+        desc: "Unlocks Control Unit Assembler (Frames + Plates → Control Units).",
+        cost: 200,
+        unlocked: false,
+        category: "production",
+        apply: () => {
+          unlockedBuildings.cuAsm = true;
+          addUnlockedBuildButton("cu_asm");
+          log("Tech unlocked: Control Units. CU Assembler available.");
+        }
+      },
+
+      // Power
+      {
+        id: "tech_gen1",
+        name: "Generator Mk1",
+        desc: "Unlocks Generator Mk1 (basic coal power).",
+        cost: 15,
+        unlocked: false,
+        category: "power",
+        apply: () => {
+          unlockedBuildings.gen1 = true;
+          addUnlockedBuildButton("gen1");
+          log("Tech unlocked: Generator Mk1.");
+        }
+      },
+      {
+        id: "tech_coal",
+        name: "Coal Processing",
+        desc: "Miners and drills can extract Coal from coal deposits.",
+        cost: 20,
+        unlocked: false,
+        category: "power",
+        apply: () => {
+          coalMiningUnlocked = true;
+          log("Tech unlocked: Coal Processing. Drills can now mine Coal.");
+        }
+      },
+      {
+        id: "tech_gen2",
+        name: "Improved Generator",
+        desc: "Unlocks Generator Mk2 (more power, better coal efficiency).",
+        cost: 50,
+        unlocked: false,
+        category: "power",
+        apply: () => {
+          unlockedBuildings.gen2 = true;
+          addUnlockedBuildButton("gen2");
+          log("Tech unlocked: Generator Mk2.");
+        }
+      },
+      {
+        id: "tech_gen3",
+        name: "Advanced Power Systems",
+        desc: "Unlocks Generator Mk3 (high power, high efficiency).",
+        cost: 150,
+        unlocked: false,
+        category: "power",
+        apply: () => {
+          unlockedBuildings.gen3 = true;
+          addUnlockedBuildButton("gen3");
+          log("Tech unlocked: Advanced Power Systems. Generator Mk3 available.");
+        }
+      },
+      {
+        id: "tech_solar",
+        name: "Solar Energy",
+        desc: "Unlocks Solar Panels (fuel-free power).",
+        cost: 200,
+        unlocked: false,
+        category: "power",
+        apply: () => {
+          unlockedBuildings.solar = true;
+          addUnlockedBuildButton("solar");
+          log("Tech unlocked: Solar Panels.");
+        }
+      },
+
+      // Logistics
+      {
+        id: "tech_storage",
+        name: "Storage Containers",
+        desc: "Unlocks Storage Containers (future logistics-ready).",
+        cost: 20,
+        unlocked: false,
+        category: "logistics",
+        apply: () => {
+          unlockedBuildings.storage = true;
+          addUnlockedBuildButton("storage");
+          log("Tech unlocked: Storage Containers.");
+        }
+      },
+      {
+        id: "tech_conveyor",
+        name: "Conveyor Belts",
+        desc: "Unlocks Conveyor Belts (2 items per tile).",
+        cost: 40,
+        unlocked: false,
+        category: "logistics",
+        apply: () => {
+          unlockedBuildings.belt = true;
+          addUnlockedBuildButton("belt");
+          log("Tech unlocked: Conveyor Belts.");
+        }
+      },
+      {
+        id: "tech_splitter",
+        name: "Splitters",
+        desc: "Unlocks Splitters (split belt flow).",
+        cost: 80,
+        unlocked: false,
+        category: "logistics",
+        apply: () => {
+          unlockedBuildings.splitter = true;
+          addUnlockedBuildButton("splitter");
+          log("Tech unlocked: Splitters.");
+        }
+      },
+      {
+        id: "tech_merger",
+        name: "Mergers",
+        desc: "Unlocks Mergers (merge belt flow).",
+        cost: 80,
+        unlocked: false,
+        category: "logistics",
+        apply: () => {
+          unlockedBuildings.merger = true;
+          addUnlockedBuildButton("merger");
+          log("Tech unlocked: Mergers.");
+        }
+      },
+
+      // Drills
+      {
+        id: "tech_burner_drill",
+        name: "Burner Drill",
+        desc: "Unlocks Burner Drill (coal-fueled, early automation).",
+        cost: 5,
+        unlocked: false,
+        category: "drills",
+        apply: () => {
+          unlockedBuildings.burnerDrill = true;
+          addUnlockedBuildButton("burner_drill");
+          log("Tech unlocked: Burner Drill.");
+        }
+      },
+      {
+        id: "tech_electric_drill",
+        name: "Electric Drill",
+        desc: "Unlocks Electric Drill (uses power, faster).",
+        cost: 20,
+        unlocked: false,
+        category: "drills",
+        apply: () => {
+          unlockedBuildings.electricDrill = true;
+          addUnlockedBuildButton("electric_drill");
+          log("Tech unlocked: Electric Drill.");
+        }
+      },
+      {
+        id: "tech_adv_drill",
+        name: "Advanced Drill",
+        desc: "Unlocks Advanced Drill (same output, less power).",
+        cost: 60,
+        unlocked: false,
+        category: "drills",
+        apply: () => {
+          unlockedBuildings.advancedDrill = true;
+          addUnlockedBuildButton("advanced_drill");
+          log("Tech unlocked: Advanced Drill.");
+        }
+      },
+      {
+        id: "tech_heavy_drill",
+        name: "Heavy Duty Drill",
+        desc: "Unlocks Heavy Duty Drill (high power, high output).",
+        cost: 120,
+        unlocked: false,
+        category: "drills",
+        apply: () => {
+          unlockedBuildings.heavyDrill = true;
+          addUnlockedBuildButton("heavy_drill");
+          log("Tech unlocked: Heavy Duty Drill.");
+        }
+      },
+      {
+        id: "tech_battery_drill",
+        name: "Battery Drill",
+        desc: "Unlocks Battery Drill (self-powered, low output).",
+        cost: 150,
+        unlocked: false,
+        category: "drills",
+        apply: () => {
+          unlockedBuildings.batteryDrill = true;
+          addUnlockedBuildButton("battery_drill");
+          log("Tech unlocked: Battery Drill.");
+        }
+      }
+    ];
+
+    const unlockedBuildings = {
+      miner: false,
+      smelter: false,
+      plateAsm: false,
+      rodAsm: false,
+      reinfAsm: false,
+      frameConst: false,
+      cuAsm: false,
+      gen1: false,
+      gen2: false,
+      gen3: false,
+      solar: false,
+      storage: false,
+      belt: false,
+      splitter: false,
+      merger: false,
+      burnerDrill: false,
+      electricDrill: false,
+      advancedDrill: false,
+      heavyDrill: false,
+      batteryDrill: false
+    };
+
+    let coalMiningUnlocked = false;
+
+    // --- UI elements ---
+    const statIronOre = document.getElementById("statIronOre");
+    const statIronIngot = document.getElementById("statIronIngot");
+    const statPlate = document.getElementById("statPlate");
+    const statRod = document.getElementById("statRod");
+    const statReinf = document.getElementById("statReinf");
+    const statFrame = document.getElementById("statFrame");
+    const statCU = document.getElementById("statCU");
+    const statCoal = document.getElementById("statCoal");
+    const statPower = document.getElementById("statPower");
+    const statRP = document.getElementById("statRP");
+    const logDiv = document.getElementById("log");
+    const techListDiv = document.getElementById("techList");
+    const techTabs = Array.from(document.querySelectorAll(".techTab"));
+    const buildButtonsContainer = document.getElementById("buildButtons");
+    const toolInspectBtn = document.getElementById("toolInspect");
+    const toolDeleteBtn = document.getElementById("toolDelete");
+
+    const titleScreen = document.getElementById("titleScreen");
+    const btnNewGame = document.getElementById("btnNewGame");
+
+    const btnSave = document.getElementById("btnSave");
+    const btnLoad = document.getElementById("btnLoad");
+    const btnClearSave = document.getElementById("btnClearSave");
+
+    const inspectPopup = document.getElementById("inspectPopup");
+    const inspectTitle = document.getElementById("inspectTitle");
+    const inspectContent = document.getElementById("inspectContent");
+    const inspectClose = document.getElementById("inspectClose");
+
+    let gameStarted = false;
+    let currentTechCategory = "production";
+
+    function log(msg) {
+      const time = new Date().toLocaleTimeString();
+      logDiv.textContent += `[${time}] ${msg}\n`;
+      logDiv.scrollTop = logDiv.scrollHeight;
+    }
+
+    // --- Inspect popup helpers ---
+    inspectClose.onclick = () => {
+      clearInspectPanel();
+    };
+
+    function inspectOpen() {
+      return !inspectPopup.classList.contains("hidden");
+    }
+
+    function showInspectPanel(b) {
+      inspectPopup.classList.remove("hidden");
+      inspectTitle.textContent = formatBuildingName(b.type);
+
+      let html = "";
+
+      // DRILLS
+      if (b.type === BUILD_BURNER_DRILL) {
+        html += `Ore: ${oreName(b.drillOreType)}<br>`;
+        html += `Fuel: ${b.internalBuffer.toFixed(1)}s<br>`;
+        html += `Output: South<br>`;
+        html += `<button class="inspectButton" id="insertFuelBtn">Insert Coal</button>`;
+      } else if (
+        b.type === BUILD_ELECTRIC_DRILL ||
+        b.type === BUILD_ADV_DRILL ||
+        b.type === BUILD_HEAVY_DRILL
+      ) {
+        html += `Ore: ${oreName(b.drillOreType)}<br>`;
+        html += `Power Use: ${b.powerUse} MW<br>`;
+        html += `Output: South<br>`;
+      } else if (b.type === BUILD_BATTERY_DRILL) {
+        html += `Ore: ${oreName(b.drillOreType)}<br>`;
+        html += `Battery: ${b.battery.toFixed(1)}s<br>`;
+        html += `Output: South<br>`;
+      }
+
+      // GENERATORS
+      if (b.type === BUILD_GEN1 || b.type === BUILD_GEN2 || b.type === BUILD_GEN3) {
+        html += `Power Output: ${b.powerGen} MW<br>`;
+        html += `Fuel Buffer: ${b.internalBuffer.toFixed(1)}s<br>`;
+      }
+
+      // SMELTER
+      if (b.type === BUILD_SMELTER) {
+        html += `Input: Iron Ore<br>`;
+        html += `Output: Iron Ingot<br>`;
+        html += `Power Use: 3 MW<br>`;
+      }
+
+      // BELT
+      if (b.type === BUILD_BELT || b.type === BUILD_SPLITTER || b.type === BUILD_MERGER) {
+        html += `Type: ${formatBuildingName(b.type)}<br>`;
+        html += `Direction: ${b.dir}<br>`;
+        html += `Items: ${b.items.length}/2<br>`;
+      }
+
+      inspectContent.innerHTML = html;
+
+      if (b.type === BUILD_BURNER_DRILL) {
+        const btn = document.getElementById("insertFuelBtn");
+        if (btn) {
+          btn.onclick = () => {
+            if (resources.coal >= 1) {
+              resources.coal -= 1;
+              b.internalBuffer += 10;
+              showInspectPanel(b);
+              updateStatsUI();
+            } else {
+              log("No coal to insert.");
+            }
+          };
+        }
+      }
+    }
+
+    function clearInspectPanel() {
+      inspectPopup.classList.add("hidden");
+    }
+
+    function formatBuildingName(type) {
+      const names = {
+        burner_drill: "Burner Drill",
+        electric_drill: "Electric Drill",
+        advanced_drill: "Advanced Drill",
+        heavy_drill: "Heavy Duty Drill",
+        battery_drill: "Battery Drill",
+        smelter: "Smelter",
+        gen1: "Generator Mk1",
+        gen2: "Generator Mk2",
+        gen3: "Generator Mk3",
+        belt: "Conveyor Belt",
+        splitter: "Splitter",
+        merger: "Merger",
+        storage: "Storage Container"
+      };
+      return names[type] || type;
+    }
+
+    function oreName(tile) {
+      if (tile === TILE_IRON) return "Iron";
+      if (tile === TILE_COAL) return "Coal";
+      return "Unknown";
+    }
+
+    // --- Dynamic build buttons ---
+    const buildButtonDefs = {
+      miner: { label: "Miner", type: BUILD_MINER },
+      gen1: { label: "Gen Mk1", type: BUILD_GEN1 },
+      gen2: { label: "Gen Mk2", type: BUILD_GEN2 },
+      gen3: { label: "Gen Mk3", type: BUILD_GEN3 },
+      smelter: { label: "Smelter", type: BUILD_SMELTER },
+      plate_asm: { label: "Plate Asm", type: BUILD_PLATE_ASM },
+      rod_asm: { label: "Rod Asm", type: BUILD_ROD_ASM },
+      reinf_asm: { label: "Reinf Asm", type: BUILD_REINF_ASM },
+      frame_const: { label: "Frame Const", type: BUILD_FRAME_CONST },
+      cu_asm: { label: "CU Asm", type: BUILD_CU_ASM },
+      solar: { label: "Solar", type: BUILD_SOLAR },
+      storage: { label: "Storage", type: BUILD_STORAGE },
+      belt: { label: "Conveyor", type: BUILD_BELT },
+      splitter: { label: "Splitter", type: BUILD_SPLITTER },
+      merger: { label: "Merger", type: BUILD_MERGER },
+      burner_drill: { label: "Burner Drill", type: BUILD_BURNER_DRILL },
+      electric_drill: { label: "Electric Drill", type: BUILD_ELECTRIC_DRILL },
+      advanced_drill: { label: "Adv Drill", type: BUILD_ADV_DRILL },
+      heavy_drill: { label: "Heavy Drill", type: BUILD_HEAVY_DRILL },
+      battery_drill: { label: "Battery Drill", type: BUILD_BATTERY_DRILL }
+    };
+
+    const unlockedBuildButtons = [];
+
+    function addUnlockedBuildButton(key) {
+      if (!buildButtonDefs[key]) return;
+      if (unlockedBuildButtons.includes(key)) return;
+      unlockedBuildButtons.push(key);
+      rebuildBuildButtons();
+    }
+
+    function rebuildBuildButtons() {
+      buildButtonsContainer.innerHTML = "";
+      unlockedBuildButtons.forEach(key => {
+        const def = buildButtonDefs[key];
+        const btn = document.createElement("button");
+        btn.textContent = def.label;
+        btn.dataset.buildType = def.type;
+        btn.addEventListener("click", () => setTool(def.type));
+        buildButtonsContainer.appendChild(btn);
+      });
+      refreshToolSelectionHighlight();
+    }
+
+    function refreshToolSelectionHighlight() {
+      document.querySelectorAll("#buildButtons button").forEach(b => b.classList.remove("selectedTool"));
+      toolInspectBtn.classList.remove("selectedTool");
+      toolDeleteBtn.classList.remove("selectedTool");
+
+      if (selectedTool === BUILD_NONE) toolInspectBtn.classList.add("selectedTool");
+      if (selectedTool === BUILD_DELETE) toolDeleteBtn.classList.add("selectedTool");
+
+      document.querySelectorAll("#buildButtons button").forEach(b => {
+        if (b.dataset.buildType === selectedTool) {
+          b.classList.add("selectedTool");
+        }
+      });
+    }
+
+    function setTool(tool) {
+      if (inspectOpen()) return; // no tool switching while popup open
+      selectedTool = tool;
+      refreshToolSelectionHighlight();
+    }
+
+    toolInspectBtn.onclick = () => setTool(BUILD_NONE);
+    toolDeleteBtn.onclick = () => setTool(BUILD_DELETE);
+
+    // --- Tech UI ---
+    function refreshTechUI() {
+      techListDiv.innerHTML = "";
+      techs
+        .filter(t => t.category === currentTechCategory)
+        .forEach(t => {
+          const div = document.createElement("div");
+          div.className = "techItem";
+          const name = document.createElement("span");
+          name.textContent = t.name + (t.unlocked ? " (Unlocked)" : "");
+          const desc = document.createElement("span");
+          desc.textContent = t.desc;
+          const cost = document.createElement("span");
+          cost.textContent = "Cost: " + t.cost + " RP";
+          div.appendChild(name);
+          div.appendChild(desc);
+          div.appendChild(cost);
+          if (!t.unlocked) {
+            const btn = document.createElement("button");
+            btn.textContent = "Research";
+            btn.onclick = () => {
+              if (resources.researchPoints >= t.cost) {
+                resources.researchPoints -= t.cost;
+                t.unlocked = true;
+                t.apply();
+                refreshTechUI();
+                updateStatsUI();
+              } else {
+                log("Not enough Research Points for " + t.name);
+              }
+            };
+            div.appendChild(btn);
+          }
+          techListDiv.appendChild(div);
+        });
+    }
+
+    techTabs.forEach(tab => {
+      tab.addEventListener("click", () => {
+        if (inspectOpen()) return;
+        techTabs.forEach(t => t.classList.remove("active"));
+        tab.classList.add("active");
+        currentTechCategory = tab.dataset.cat;
+        refreshTechUI();
+      });
+    });
+
+    refreshTechUI();
+
+    // --- Input handling ---
+    canvas.addEventListener("mousedown", (e) => {
+      if (!gameStarted) return;
+      if (inspectOpen()) return; // no clicks while popup open
+
+      const rect = canvas.getBoundingClientRect();
+      const mx = e.clientX - rect.left;
+      const my = e.clientY - rect.top;
+
+      const tile = screenToTile(mx, my);
+      if (!tile) return;
+
+      if (e.button === 2) {
+        e.preventDefault();
+        setTool(BUILD_NONE);
+        return;
+      }
+
+      if (e.button === 0) {
+        handleTileClick(tile.tx, tile.ty);
+      }
+    });
+
+    canvas.addEventListener("contextmenu", (e) => e.preventDefault());
+
+    window.addEventListener("wheel", (e) => {
+      if (!gameStarted) return;
+      const delta = -Math.sign(e.deltaY) * 0.1;
+      zoom = Math.min(2.5, Math.max(0.5, zoom + delta));
+    });
+
+    window.addEventListener("keydown", (e) => {
+      if (!gameStarted) return;
+
+      if (!inspectOpen()) {
+        if (e.key === "w" || e.key === "W" || e.key === "ArrowUp") keys.w = true;
+        if (e.key === "s" || e.key === "S" || e.key === "ArrowDown") keys.s = true;
+        if (e.key === "a" || e.key === "A" || e.key === "ArrowLeft") keys.a = true;
+        if (e.key === "d" || e.key === "D" || e.key === "ArrowRight") keys.d = true;
+        if (e.key === "e" || e.key === "E") keyE = true;
+        if (e.key === "r" || e.key === "R") {
+          const dirs = ["N", "E", "S", "W"];
+          const idx = dirs.indexOf(beltPreviewDir);
+          beltPreviewDir = dirs[(idx + 1) % dirs.length];
+        }
+      }
+
+      if (e.key === "Escape" && inspectOpen()) {
+        clearInspectPanel();
+      }
+    });
+
+    window.addEventListener("keyup", (e) => {
+      if (!gameStarted) return;
+      if (inspectOpen()) return;
+
+      if (e.key === "w" || e.key === "W" || e.key === "ArrowUp") keys.w = false;
+      if (e.key === "s" || e.key === "S" || e.key === "ArrowDown") keys.s = false;
+      if (e.key === "a" || e.key === "A" || e.key === "ArrowLeft") keys.a = false;
+      if (e.key === "d" || e.key === "D" || e.key === "ArrowRight") keys.d = false;
+      if (e.key === "e" || e.key === "E") keyE = false;
+    });
+
+    function screenToTile(mx, my) {
+      const worldViewWidth = canvas.width / zoom;
+      const worldViewHeight = canvas.height / zoom;
+      const cameraX = player.x * TILE_SIZE_BASE - worldViewWidth / 2;
+      const cameraY = player.y * TILE_SIZE_BASE - worldViewHeight / 2;
+
+      const wx = (mx / zoom + cameraX) / TILE_SIZE_BASE;
+      const wy = (my / zoom + cameraY) / TILE_SIZE_BASE;
+      const tx = Math.floor(wx);
+      const ty = Math.floor(wy);
+      if (tx < 0 || ty < 0 || tx >= WORLD_W || ty >= WORLD_H) return null;
+      return { tx, ty };
+    }
+
+    function handleTileClick(tx, ty) {
+      const px = Math.floor(player.x);
+      const py = Math.floor(player.y);
+      const dist = Math.hypot(tx - px, ty - py);
+      if (dist > 3.5 && selectedTool !== BUILD_NONE && selectedTool !== BUILD_DELETE) {
+        log("Too far from player to build here.");
+        return;
+      }
+
+      if (selectedTool === BUILD_DELETE) {
+        const idx = buildings.findIndex(b => b.x === tx && b.y === ty);
+        if (idx >= 0) {
+          const b = buildings[idx];
+          buildings.splice(idx, 1);
+          log("Removed " + b.type + " at (" + tx + "," + ty + ")");
+        }
+        return;
+      }
+
+      if (selectedTool === BUILD_NONE) {
+        const b = buildings.find(b => b.x === tx && b.y === ty);
+        if (b) {
+          showInspectPanel(b);
+        } else {
+          clearInspectPanel();
+          const tileType = world[ty][tx];
+          let tName = "Empty";
+          if (tileType === TILE_IRON) tName = "Iron Ore";
+          if (tileType === TILE_COAL) tName = "Coal";
+          log("Tile (" + tx + "," + ty + ") type: " + tName);
+        }
+        return;
+      }
+
+      if (buildings.some(b => b.x === tx && b.y === ty)) {
+        log("Tile already occupied.");
+        return;
+      }
+
+      const tileType = world[ty][tx];
+
+      if (
+        selectedTool === BUILD_BURNER_DRILL ||
+        selectedTool === BUILD_ELECTRIC_DRILL ||
+        selectedTool === BUILD_ADV_DRILL ||
+        selectedTool === BUILD_HEAVY_DRILL ||
+        selectedTool === BUILD_BATTERY_DRILL
+      ) {
+        if (tileType !== TILE_IRON && tileType !== TILE_COAL) {
+          log("Drills must be placed on Iron or Coal.");
+          return;
+        }
+        if (tileType === TILE_COAL && !coalMiningUnlocked) {
+          log("Coal mining not unlocked yet.");
+          return;
+        }
+      }
+
+      const building = {
+        id: nextBuildingId++,
+        x: tx,
+        y: ty,
+        type: selectedTool,
+        progress: 0,
+        enabled: true,
+        powerUse: 0,
+        powerGen: 0,
+        internalBuffer: 0,
+        dir: null,
+        items: [],
+        drillOreType: tileType,
+        battery: 0
+      };
+
+      if (selectedTool === BUILD_SMELTER) {
+        building.powerUse = 3;
+      } else if (selectedTool === BUILD_PLATE_ASM) {
+        building.powerUse = 3;
+      } else if (selectedTool === BUILD_ROD_ASM) {
+        building.powerUse = 3;
+      } else if (selectedTool === BUILD_REINF_ASM) {
+        building.powerUse = 4;
+      } else if (selectedTool === BUILD_FRAME_CONST) {
+        building.powerUse = 4;
+      } else if (selectedTool === BUILD_CU_ASM) {
+        building.powerUse = 5;
+      } else if (selectedTool === BUILD_GEN1) {
+        building.powerGen = 5;
+        building.internalBuffer = 20;
+      } else if (selectedTool === BUILD_GEN2) {
+        building.powerGen = 12;
+      } else if (selectedTool === BUILD_GEN3) {
+        building.powerGen = 25;
+      } else if (selectedTool === BUILD_SOLAR) {
+        building.powerGen = 8;
+      } else if (selectedTool === BUILD_STORAGE) {
+        building.powerUse = 0;
+      } else if (selectedTool === BUILD_BELT || selectedTool === BUILD_SPLITTER || selectedTool === BUILD_MERGER) {
+        building.powerUse = 0;
+        building.dir = beltPreviewDir;
+      } else if (selectedTool === BUILD_BURNER_DRILL) {
+        building.powerUse = 0;
+        building.internalBuffer = 0;
+      } else if (selectedTool === BUILD_ELECTRIC_DRILL) {
+        building.powerUse = 2;
+      } else if (selectedTool === BUILD_ADV_DRILL) {
+        building.powerUse = 1;
+      } else if (selectedTool === BUILD_HEAVY_DRILL) {
+        building.powerUse = 4;
+      } else if (selectedTool === BUILD_BATTERY_DRILL) {
+        building.powerUse = 0;
+        building.battery = 20;
+      }
+
+      buildings.push(building);
+      log("Placed " + selectedTool + " at (" + tx + "," + ty + ")");
+    }
+
+    // --- Manual mining ---
+    function tryManualMine(dt) {
+      if (!keyE) return;
+      if (inspectOpen()) return;
+      const tx = Math.floor(player.x);
+      const ty = Math.floor(player.y);
+      if (tx < 0 || ty < 0 || tx >= WORLD_W || ty >= WORLD_H) return;
+      const tileType = world[ty][tx];
+      if (tileType === TILE_IRON) {
+        resources.ironOre += 1;
+        resources.researchPoints += 0.1;
+        log("Mined Iron Ore by hand.");
+        keyE = false;
+      } else if (tileType === TILE_COAL) {
+        resources.coal += 1;
+        resources.researchPoints += 0.15;
+        log("Mined Coal by hand.");
+        keyE = false;
+      }
+    }
+
+    // --- Player movement ---
+    function updatePlayer(dt) {
+      if (inspectOpen()) return;
+
+      let dx = 0;
+      let dy = 0;
+      if (keys.w) dy -= 1;
+      if (keys.s) dy += 1;
+      if (keys.a) dx -= 1;
+      if (keys.d) dx += 1;
+
+      if (dx !== 0 || dy !== 0) {
+        const len = Math.hypot(dx, dy);
+        dx /= len;
+        dy /= len;
+
+        const moveDist = player.speed * dt;
+        const newX = player.x + dx * moveDist;
+        const newY = player.y + dy * moveDist;
+
+        const halfSize = player.size / 2;
+        let clampedX = Math.max(halfSize, Math.min(WORLD_W - halfSize, newX));
+        let clampedY = Math.max(halfSize, Math.min(WORLD_H - halfSize, newY));
+
+        const targetTileX = Math.floor(clampedX);
+        const currentTileY = Math.floor(player.y);
+        if (buildings.some(b => b.x === targetTileX && b.y === currentTileY && b.type !== BUILD_BELT)) {
+          clampedX = player.x;
+        }
+
+        const targetTileY = Math.floor(clampedY);
+        const currentTileX = Math.floor(clampedX);
+        if (buildings.some(b => b.x === currentTileX && b.y === targetTileY && b.type !== BUILD_BELT)) {
+          clampedY = player.y;
+        }
+
+        player.x = clampedX;
+        player.y = clampedY;
+      }
+    }
+
+    // --- Simulation loop ---
+    let lastTime = performance.now();
+    let simAccumulator = 0;
+    const SIM_STEP = 0.5;
+
+    function update(dt) {
+      if (!gameStarted) return;
+
+      updatePlayer(dt);
+      tryManualMine(dt);
+
+      simAccumulator += dt;
+      while (simAccumulator >= SIM_STEP) {
+        simAccumulator -= SIM_STEP;
+        stepSimulation(SIM_STEP);
+      }
+    }
+
+    function stepSimulation(dt) {
+      totalPowerGen = 0;
+      totalPowerUse = 0;
+
+      let coalNeeded = 0;
+
+      buildings.forEach(b => {
+        if (b.type === BUILD_GEN1 || b.type === BUILD_GEN2 || b.type === BUILD_GEN3 || b.type === BUILD_SOLAR) {
+          let gen = 0;
+          let coalPerSec = 0;
+
+          if (b.type === BUILD_GEN1) {
+            gen = 5;
+            coalPerSec = 1 / 10;
+          } else if (b.type === BUILD_GEN2) {
+            gen = 12;
+            coalPerSec = 1 / 20;
+          } else if (b.type === BUILD_GEN3) {
+            gen = 25;
+            coalPerSec = 1 / 30;
+          } else if (b.type === BUILD_SOLAR) {
+            gen = 8;
+            coalPerSec = 0;
+          }
+
+          if (b.type === BUILD_SOLAR) {
+            b.powerGen = gen;
+            totalPowerGen += gen;
+          } else {
+            let canRun = false;
+            if (b.internalBuffer > 0) {
+              const used = Math.min(b.internalBuffer, dt);
+              b.internalBuffer -= used;
+              canRun = true;
+            } else {
+              const coalThisStep = coalPerSec * dt;
+              coalNeeded += coalThisStep;
+              canRun = true;
+            }
+            if (canRun) {
+              b.powerGen = gen;
+              totalPowerGen += gen;
+            } else {
+              b.powerGen = 0;
+            }
+          }
+        } else {
+          totalPowerUse += b.powerUse;
+        }
+      });
+
+      const coalAvailable = resources.coal;
+      const coalToConsume = coalNeeded;
+      if (coalToConsume > 0) {
+        if (coalAvailable >= coalToConsume) {
+          resources.coal -= coalToConsume;
+        } else {
+          const factor = coalAvailable / coalToConsume;
+          resources.coal = 0;
+          totalPowerGen *= factor;
+        }
+      }
+
+      const powerAvailable = totalPowerGen >= totalPowerUse;
+
+      buildings.forEach(b => {
+        const isPowerExempt =
+          b.type === BUILD_GEN1 ||
+          b.type === BUILD_GEN2 ||
+          b.type === BUILD_GEN3 ||
+          b.type === BUILD_SOLAR ||
+          b.type === BUILD_BELT ||
+          b.type === BUILD_SPLITTER ||
+          b.type === BUILD_MERGER ||
+          b.type === BUILD_BURNER_DRILL ||
+          b.type === BUILD_BATTERY_DRILL;
+
+        if (!powerAvailable && !isPowerExempt && b.powerUse > 0) {
+          return;
+        }
+
+        if (
+          b.type === BUILD_BURNER_DRILL ||
+          b.type === BUILD_ELECTRIC_DRILL ||
+          b.type === BUILD_ADV_DRILL ||
+          b.type === BUILD_HEAVY_DRILL ||
+          b.type === BUILD_BATTERY_DRILL
+        ) {
+          updateDrill(b, dt, powerAvailable);
+          return;
+        }
+
+        if (b.type === BUILD_SMELTER) {
+          if (resources.ironOre <= 0) return;
+          b.progress += dt;
+          if (b.progress >= 2) {
+            b.progress = 0;
+            resources.ironOre -= 1;
+            resources.ironIngot += 1;
+            resources.researchPoints += 0.2;
+          }
+        } else if (b.type === BUILD_PLATE_ASM) {
+          if (resources.ironIngot <= 0) return;
+          b.progress += dt;
+          if (b.progress >= 2.5) {
+            b.progress = 0;
+            resources.ironIngot -= 1;
+            resources.plate += 1;
+            resources.researchPoints += 0.25;
+          }
+        } else if (b.type === BUILD_ROD_ASM) {
+          if (resources.ironIngot <= 0) return;
+          b.progress += dt;
+          if (b.progress >= 2.5) {
+            b.progress = 0;
+            resources.ironIngot -= 1;
+            resources.rod += 1;
+            resources.researchPoints += 0.25;
+          }
+        } else if (b.type === BUILD_REINF_ASM) {
+          if (resources.plate < 2 || resources.rod < 4) return;
+          b.progress += dt;
+          if (b.progress >= 4) {
+            b.progress = 0;
+            resources.plate -= 2;
+            resources.rod -= 4;
+            resources.reinfPlate += 1;
+            resources.researchPoints += 0.4;
+          }
+        } else if (b.type === BUILD_FRAME_CONST) {
+          if (resources.reinfPlate < 3 || resources.rod < 6) return;
+          b.progress += dt;
+          if (b.progress >= 5) {
+            b.progress = 0;
+            resources.reinfPlate -= 3;
+            resources.rod -= 6;
+            resources.frame += 1;
+            resources.researchPoints += 0.6;
+          }
+        } else if (b.type === BUILD_CU_ASM) {
+          if (resources.frame < 2 || resources.plate < 4) return;
+          b.progress += dt;
+          if (b.progress >= 6) {
+            b.progress = 0;
+            resources.frame -= 2;
+            resources.plate -= 4;
+            resources.controlUnit += 1;
+            resources.researchPoints += 0.8;
+          }
+        }
+      });
+
+      updateBelts();
+
+      resources.researchPoints = Math.round(resources.researchPoints * 10) / 10;
+      updateStatsUI();
+    }
+
+    function updateDrill(b, dt, powerAvailable) {
+      let rate = 0;
+      let needsPower = false;
+      let usesBattery = false;
+      let usesFuel = false;
+
+      if (b.type === BUILD_BURNER_DRILL) {
+        rate = 1;
+        usesFuel = true;
+      } else if (b.type === BUILD_ELECTRIC_DRILL) {
+        rate = 1.5;
+        needsPower = true;
+      } else if (b.type === BUILD_ADV_DRILL) {
+        rate = 1.5;
+        needsPower = true;
+      } else if (b.type === BUILD_HEAVY_DRILL) {
+        rate = 3;
+        needsPower = true;
+      } else if (b.type === BUILD_BATTERY_DRILL) {
+        rate = 0.7;
+        usesBattery = true;
+      }
+
+      if (needsPower && !powerAvailable) return;
+
+      if (usesFuel) {
+        if (b.internalBuffer <= 0) return;
+        b.internalBuffer = Math.max(0, b.internalBuffer - dt);
+      }
+
+      if (usesBattery) {
+        if (b.battery <= 0) return;
+        b.battery = Math.max(0, b.battery - dt);
+      }
+
+      b.progress += dt;
+      const timePerOre = 3 / rate;
+      if (b.progress >= timePerOre) {
+        b.progress = 0;
+        const oreType = b.drillOreType;
+        if (oreType === TILE_IRON) {
+          outputDrillItem(b, "ironOre");
+          resources.researchPoints += 0.15;
+        } else if (oreType === TILE_COAL && coalMiningUnlocked) {
+          outputDrillItem(b, "coal");
+          resources.researchPoints += 0.2;
+        }
+      }
+    }
+
+    function outputDrillItem(b, itemType) {
+      const forwardPos = getForwardPos(b.x, b.y, "S");
+      const belt = buildings.find(o =>
+        o.x === forwardPos.x &&
+        o.y === forwardPos.y &&
+        (o.type === BUILD_BELT || o.type === BUILD_SPLITTER || o.type === BUILD_MERGER)
+      );
+      if (belt && belt.items.length < 2) {
+        belt.items.push(itemType);
+      } else {
+        if (itemType === "ironOre") resources.ironOre += 1;
+        if (itemType === "coal") resources.coal += 1;
+      }
+    }
+
+    function updateBelts() {
+      const beltTiles = buildings.filter(b =>
+        b.type === BUILD_BELT || b.type === BUILD_SPLITTER || b.type === BUILD_MERGER
+      );
+
+      beltTiles.forEach(b => {
+        const forwardPos = getForwardPos(b.x, b.y, b.dir);
+        const forward = buildings.find(o =>
+          o.x === forwardPos.x && o.y === forwardPos.y &&
+          (o.type === BUILD_BELT || o.type === BUILD_SPLITTER || o.type === BUILD_MERGER)
+        );
+        if (!forward) return;
+        while (b.items.length > 0 && forward.items.length < 2) {
+          forward.items.push(b.items.shift());
+        }
+      });
+
+      beltTiles.forEach(b => {
+        if (b.type !== BUILD_SPLITTER) return;
+        if (b.items.length === 0) return;
+        const forwardPos = getForwardPos(b.x, b.y, b.dir);
+        const leftDir = turnLeft(b.dir);
+        const rightDir = turnRight(b.dir);
+        const leftPos = getForwardPos(b.x, b.y, leftDir);
+        const rightPos = getForwardPos(b.x, b.y, rightDir);
+
+        const forward = buildings.find(o => o.x === forwardPos.x && o.y === forwardPos.y && o.type === BUILD_BELT);
+        const left = buildings.find(o => o.x === leftPos.x && o.y === leftPos.y && o.type === BUILD_BELT);
+        const right = buildings.find(o => o.x === rightPos.x && o.y === rightPos.y && o.type === BUILD_BELT);
+
+        const targets = [left, right, forward].filter(Boolean);
+        if (targets.length === 0) return;
+
+        const item = b.items.shift();
+        const target = targets[Math.floor(Math.random() * targets.length)];
+        if (target.items.length < 2) {
+          target.items.push(item);
+        } else {
+          b.items.unshift(item);
+        }
+      });
+    }
+
+    function getForwardPos(x, y, dir) {
+      if (dir === "N") return { x, y: y - 1 };
+      if (dir === "S") return { x, y: y + 1 };
+      if (dir === "W") return { x: x - 1, y };
+      if (dir === "E") return { x: x + 1, y };
+      return { x, y };
+    }
+
+    function turnLeft(dir) {
+      if (dir === "N") return "W";
+      if (dir === "W") return "S";
+      if (dir === "S") return "E";
+      if (dir === "E") return "N";
+      return dir;
+    }
+
+    function turnRight(dir) {
+      if (dir === "N") return "E";
+      if (dir === "E") return "S";
+      if (dir === "S") return "W";
+      if (dir === "W") return "N";
+      return dir;
+    }
+
+    function updateStatsUI() {
+      statIronOre.textContent = resources.ironOre;
+      statIronIngot.textContent = resources.ironIngot;
+      statPlate.textContent = resources.plate;
+      statRod.textContent = resources.rod;
+      statReinf.textContent = resources.reinfPlate;
+      statFrame.textContent = resources.frame;
+      statCU.textContent = resources.controlUnit;
+      statCoal.textContent = Math.round(resources.coal * 10) / 10;
+      statPower.textContent = Math.round(totalPowerGen) + " / " + Math.round(totalPowerUse);
+      statRP.textContent = resources.researchPoints;
+    }
+
+    // --- Rendering ---
+    function render() {
+      const worldViewWidth = canvas.width / zoom;
+      const worldViewHeight = canvas.height / zoom;
+      const cameraX = player.x * TILE_SIZE_BASE - worldViewWidth / 2;
+      const cameraY = player.y * TILE_SIZE_BASE - worldViewHeight / 2;
+
+      ctx.setTransform(zoom, 0, 0, zoom, -cameraX * zoom, -cameraY * zoom);
+      ctx.clearRect(cameraX - 100, cameraY - 100, worldViewWidth + 200, worldViewHeight + 200);
+
+      for (let y = 0; y < WORLD_H; y++) {
+        for (let x = 0; x < WORLD_W; x++) {
+          const tile = world[y][x];
+          if (tile === TILE_EMPTY) {
+            ctx.fillStyle = "#202020";
+          } else if (tile === TILE_IRON) {
+            ctx.fillStyle = "#2f3f6f";
+          } else if (tile === TILE_COAL) {
+            ctx.fillStyle = "#3b2f1f";
+          }
+          ctx.fillRect(x * TILE_SIZE_BASE, y * TILE_SIZE_BASE, TILE_SIZE_BASE, TILE_SIZE_BASE);
+          ctx.strokeStyle = "#333";
+          ctx.strokeRect(x * TILE_SIZE_BASE, y * TILE_SIZE_BASE, TILE_SIZE_BASE, TILE_SIZE_BASE);
+        }
+      }
+
+      buildings.forEach(b => {
+        if (b.type === BUILD_BELT || b.type === BUILD_SPLITTER || b.type === BUILD_MERGER) {
+          drawBeltLike(b);
+          return;
+        }
+
+        let color = "#888";
+        if (b.type === BUILD_SMELTER) color = "#ff5722";
+        if (b.type === BUILD_PLATE_ASM) color = "#4caf50";
+        if (b.type === BUILD_ROD_ASM) color = "#8bc34a";
+        if (b.type === BUILD_REINF_ASM) color = "#cddc39";
+        if (b.type === BUILD_FRAME_CONST) color = "#03a9f4";
+        if (b.type === BUILD_CU_ASM) color = "#00bcd4";
+        if (b.type === BUILD_GEN1) color = "#9c27b0";
+        if (b.type === BUILD_GEN2) color = "#7b1fa2";
+        if (b.type === BUILD_GEN3) color = "#4a148c";
+        if (b.type === BUILD_SOLAR) color = "#009688";
+        if (b.type === BUILD_STORAGE) color = "#795548";
+
+        if (b.type === BUILD_BURNER_DRILL) color = "grey";
+        if (b.type === BUILD_ELECTRIC_DRILL) color = "orange";
+        if (b.type === BUILD_ADV_DRILL) color = "#ff8080";
+        if (b.type === BUILD_HEAVY_DRILL) color = "#8b0000";
+        if (b.type === BUILD_BATTERY_DRILL) color = "pink";
+
+        ctx.fillStyle = color;
+        ctx.fillRect(
+          b.x * TILE_SIZE_BASE + 3,
+          b.y * TILE_SIZE_BASE + 3,
+          TILE_SIZE_BASE - 6,
+          TILE_SIZE_BASE - 6
+        );
+
+        if (
+          b.type === BUILD_SMELTER ||
+          b.type === BUILD_PLATE_ASM ||
+          b.type === BUILD_ROD_ASM ||
+          b.type === BUILD_REINF_ASM ||
+          b.type === BUILD_FRAME_CONST ||
+          b.type === BUILD_CU_ASM ||
+          b.type === BUILD_BURNER_DRILL ||
+          b.type === BUILD_ELECTRIC_DRILL ||
+          b.type === BUILD_ADV_DRILL ||
+          b.type === BUILD_HEAVY_DRILL ||
+          b.type === BUILD_BATTERY_DRILL
+        ) {
+          ctx.fillStyle = "#000";
+          ctx.fillRect(
+            b.x * TILE_SIZE_BASE + 3,
+            b.y * TILE_SIZE_BASE + TILE_SIZE_BASE - 6,
+            TILE_SIZE_BASE - 6,
+            3
+          );
+          let maxTime = 1;
+          if (b.type === BUILD_SMELTER) maxTime = 2;
+          if (b.type === BUILD_PLATE_ASM) maxTime = 2.5;
+          if (b.type === BUILD_ROD_ASM) maxTime = 2.5;
+          if (b.type === BUILD_REINF_ASM) maxTime = 4;
+          if (b.type === BUILD_FRAME_CONST) maxTime = 5;
+          if (b.type === BUILD_CU_ASM) maxTime = 6;
+          if (
+            b.type === BUILD_BURNER_DRILL ||
+            b.type === BUILD_ELECTRIC_DRILL ||
+            b.type === BUILD_ADV_DRILL ||
+            b.type === BUILD_HEAVY_DRILL ||
+            b.type === BUILD_BATTERY_DRILL
+          ) {
+            maxTime = 3;
+          }
+          const p = Math.min(1, b.progress / maxTime);
+          ctx.fillStyle = "#0f0";
+          ctx.fillRect(
+            b.x * TILE_SIZE_BASE + 3,
+            b.y * TILE_SIZE_BASE + TILE_SIZE_BASE - 6,
+            (TILE_SIZE_BASE - 6) * p,
+            3
+          );
+        }
+      });
+
+      const px = player.x * TILE_SIZE_BASE;
+      const py = player.y * TILE_SIZE_BASE;
+      const pSize = TILE_SIZE_BASE * player.size;
+
+      ctx.fillStyle = "#00e5ff";
+      ctx.fillRect(
+        px - pSize / 2,
+        py - pSize / 2,
+        pSize,
+        pSize
+      );
+
+      ctx.strokeStyle = "#000";
+      ctx.lineWidth = 2 / zoom;
+      ctx.strokeRect(
+        px - pSize / 2,
+        py - pSize / 2,
+        pSize,
+        pSize
+      );
+
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+    }
+
+    function drawBeltLike(b) {
+      const x = b.x * TILE_SIZE_BASE;
+      const y = b.y * TILE_SIZE_BASE;
+      const w = TILE_SIZE_BASE;
+      const h = TILE_SIZE_BASE;
+
+      ctx.fillStyle = "#303030";
+      ctx.fillRect(x, y, w, h);
+
+      ctx.fillStyle = "#181818";
+      ctx.fillRect(x, y, w, 4);
+      ctx.fillRect(x, y + h - 4, w, 4);
+
+      ctx.fillStyle = "#505050";
+      ctx.fillRect(x, y + 4, w, h - 8);
+
+      ctx.fillStyle = "#cfcfcf";
+      ctx.beginPath();
+      if (b.dir === "N") {
+        ctx.moveTo(x + w / 2, y + 4);
+        ctx.lineTo(x + 4, y + h / 2);
+        ctx.lineTo(x + w - 4, y + h / 2);
+      } else if (b.dir === "S") {
+        ctx.moveTo(x + w / 2, y + h - 4);
+        ctx.lineTo(x + 4, y + h / 2);
+        ctx.lineTo(x + w - 4, y + h / 2);
+      } else if (b.dir === "W") {
+        ctx.moveTo(x + 4, y + h / 2);
+        ctx.lineTo(x + w / 2, y + 4);
+        ctx.lineTo(x + w / 2, y + h - 4);
+      } else if (b.dir === "E") {
+        ctx.moveTo(x + w - 4, y + h / 2);
+        ctx.lineTo(x + w / 2, y + 4);
+        ctx.lineTo(x + w / 2, y + h - 4);
+      }
+      ctx.closePath();
+      ctx.fill();
+
+      const itemSize = 5;
+      const positions = [
+        { ox: w / 3, oy: h / 2 },
+        { ox: (2 * w) / 3, oy: h / 2 }
+      ];
+      ctx.fillStyle = "#ffd54f";
+      b.items.forEach((item, idx) => {
+        const pos = positions[idx];
+        ctx.fillRect(
+          x + pos.ox - itemSize / 2,
+          y + pos.oy - itemSize / 2,
+          itemSize,
+          itemSize
+        );
+      });
+    }
+
+    function loop(now) {
+      const dt = (now - lastTime) / 1000;
+      lastTime = now;
+      update(dt);
+      render();
+      requestAnimationFrame(loop);
+    }
+
+    requestAnimationFrame(loop);
+
+    // --- Save / Load ---
+    const SAVE_KEY = "factory_drift_save_v2_drills_popup";
+
+    function saveGame() {
+      const saveData = {
+        world,
+        player: { x: player.x, y: player.y },
+        zoom,
+        resources: { ...resources },
+        buildings: buildings.map(b => ({
+          id: b.id,
+          x: b.x,
+          y: b.y,
+          type: b.type,
+          progress: b.progress,
+          enabled: b.enabled,
+          powerUse: b.powerUse,
+          powerGen: b.powerGen,
+          internalBuffer: b.internalBuffer,
+          dir: b.dir,
+          items: b.items,
+          drillOreType: b.drillOreType,
+          battery: b.battery
+        })),
+        nextBuildingId,
+        techs: techs.map(t => ({ id: t.id, unlocked: t.unlocked })),
+        unlockedBuildings: { ...unlockedBuildings },
+        coalMiningUnlocked,
+        unlockedBuildButtons: [...unlockedBuildButtons],
+        currentTechCategory
+      };
+      try {
+        localStorage.setItem(SAVE_KEY, JSON.stringify(saveData));
+        log("Game saved.");
+      } catch (e) {
+        log("Failed to save game (localStorage error).");
+      }
+    }
+
+    function loadGame() {
+      const raw = localStorage.getItem(SAVE_KEY);
+      if (!raw) {
+        log("No save found.");
+        return;
+      }
+      try {
+        const data = JSON.parse(raw);
+
+        world = data.world || world;
+        if (data.player) {
+          player.x = data.player.x;
+          player.y = data.player.y;
+        }
+        zoom = data.zoom || 1;
+
+        if (data.resources) {
+          Object.assign(resources, data.resources);
+        }
+
+        buildings = (data.buildings || []).map(b => ({
+          id: b.id,
+          x: b.x,
+          y: b.y,
+          type: b.type,
+          progress: b.progress || 0,
+          enabled: b.enabled !== false,
+          powerUse: b.powerUse || 0,
+          powerGen: b.powerGen || 0,
+          internalBuffer: b.internalBuffer || 0,
+          dir: b.dir || null,
+          items: b.items || [],
+          drillOreType: b.drillOreType || TILE_EMPTY,
+          battery: b.battery || 0
+        }));
+
+        nextBuildingId = data.nextBuildingId || (buildings.reduce((m, b) => Math.max(m, b.id), 0) + 1);
+
+        if (data.techs) {
+          data.techs.forEach(saved => {
+            const t = techs.find(tt => tt.id === saved.id);
+            if (t) t.unlocked = saved.unlocked;
+          });
+        }
+
+        if (data.unlockedBuildings) {
+          Object.assign(unlockedBuildings, data.unlockedBuildings);
+        }
+
+        coalMiningUnlocked = !!data.coalMiningUnlocked;
+        currentTechCategory = data.currentTechCategory || "production";
+
+        unlockedBuildButtons.length = 0;
+        (data.unlockedBuildButtons || []).forEach(k => unlockedBuildButtons.push(k));
+        rebuildBuildButtons();
+        refreshTechUI();
+        updateStatsUI();
+
+        gameStarted = true;
+        titleScreen.classList.add("hidden");
+
+        log("Game loaded.");
+      } catch (e) {
+        log("Failed to load game (corrupt save?).");
+      }
+    }
+
+    function clearSave() {
+      localStorage.removeItem(SAVE_KEY);
+      log("Save cleared.");
+    }
+
+    btnSave.addEventListener("click", saveGame);
+    btnLoad.addEventListener("click", loadGame);
+    btnClearSave.addEventListener("click", clearSave);
+
+    // --- Title screen logic ---
+    btnNewGame.addEventListener("click", () => {
+      if (gameStarted) return;
+      gameStarted = true;
+      titleScreen.classList.add("hidden");
+      log("Game started. Mine by hand with E, then research Burner Drill (5 RP) and Generator Mk1 (15 RP).");
+    });
+
+    if (localStorage.getItem(SAVE_KEY)) {
+      log("Save detected. Click 'Load Game' to continue, or 'New Game' to start fresh.");
+    }
+  </script>
+</body>
+</html>
+
+
+
+
+
+

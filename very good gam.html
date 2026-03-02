@@ -1,0 +1,708 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Dungeon Crawler with Battles & Shops</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: system-ui, sans-serif; }
+    body {
+      background: #111;
+      color: #f5f5f5;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+      overflow: hidden;
+      position: relative;
+    }
+
+    /* Noah label */
+    #noah-label {
+      position: fixed;
+      top: 6px;
+      left: 8px;
+      font-family: "Courier New", monospace;
+      font-size: 0.8rem;
+      letter-spacing: 1px;
+      color: #9cff57;
+      text-shadow: 0 0 4px #3aff00;
+      pointer-events: none;
+      user-select: none;
+    }
+
+    #game-container { display: flex; flex-direction: column; gap: 10px; align-items: center; }
+
+    #hud { font-size: 0.9rem; }
+    #message { min-height: 20px; font-size: 0.9rem; }
+
+    #grid {
+      display: grid;
+      grid-template-columns: repeat(10, 32px);
+      grid-template-rows: repeat(10, 32px);
+      gap: 2px;
+      background: #222;
+      padding: 6px;
+      border-radius: 6px;
+      box-shadow: 0 0 15px rgba(0,0,0,0.6);
+    }
+
+    .cell {
+      width: 32px; height: 32px; border-radius: 4px;
+      display: flex; justify-content: center; align-items: center;
+      font-size: 1.1rem;
+    }
+
+    .floor { background: #333; }
+    .wall { background: #000; }
+    .player { background: #2b7cff; }
+    .enemy { background: #b32626; }
+    .treasure { background: #c9a227; }
+    .exit { background: #2f8f46; }
+    .shop-item { background: #444; }
+    .shopkeeper { background: #663399; }
+
+    #battle-screen {
+      position: fixed; inset: 0; background: #000c;
+      display: none; flex-direction: column; padding: 20px;
+    }
+
+    .battle-panel {
+      background: #222; padding: 12px; border-radius: 8px;
+      width: 45%; box-shadow: 0 0 10px #000;
+    }
+
+    #battle-main { display: flex; justify-content: space-between; flex: 1; align-items: center; }
+    #battle-actions { display: flex; gap: 10px; margin: 10px 0; }
+    .battle-btn { flex: 1; padding: 10px; background: #444; border: none; border-radius: 6px; color: #fff; cursor: pointer; }
+    .battle-btn:disabled { background: #222; color: #777; }
+
+    .hp-bar { width: 100%; height: 16px; background: #333; border-radius: 8px; overflow: hidden; margin-bottom: 6px; }
+    .hp-fill { height: 100%; background: #2f8f46; width: 100%; transition: width 0.2s; }
+
+    #battle-log { background: #111; padding: 10px; height: 120px; overflow-y: auto; border-radius: 6px; font-size: 0.85rem; }
+  </style>
+</head>
+<body>
+
+  <div id="noah-label">Noah is hacking for me :3</div>
+
+  <div id="game-container">
+    <div id="hud">
+      HP: <span id="hp">10</span> |
+      Gold: <span id="gold">0</span> |
+      Level: <span id="level">1</span> |
+      Weapon: <span id="weapon-name">Wooden Sword</span>
+    </div>
+
+    <div id="grid"></div>
+    <div id="message"></div>
+    <button id="restart-btn">Restart</button>
+  </div>
+
+  <!-- BATTLE SCREEN -->
+  <div id="battle-screen">
+    <h2>Battle!</h2>
+    <div id="battle-main">
+      <div class="battle-panel">
+        <h3>You</h3>
+        <div class="hp-bar"><div class="hp-fill" id="player-hp-fill"></div></div>
+        <div id="player-hp-text"></div>
+        <div id="player-weapon"></div>
+        <div id="player-special"></div>
+      </div>
+
+      <div class="battle-panel">
+        <h3 id="enemy-name">Enemy</h3>
+        <div class="hp-bar"><div class="hp-fill" id="enemy-hp-fill"></div></div>
+        <div id="enemy-hp-text"></div>
+        <div id="enemy-dmg"></div>
+      </div>
+    </div>
+
+    <div id="battle-actions">
+      <button class="battle-btn" id="btn-attack">Attack</button>
+      <button class="battle-btn" id="btn-block">Block</button>
+      <button class="battle-btn" id="btn-counter">Counter</button>
+      <button class="battle-btn" id="btn-special">Special</button>
+      <button class="battle-btn" id="btn-run">Run</button>
+    </div>
+
+    <div id="battle-log"></div>
+  </div>
+
+<script>
+/* ===========================
+   GAME STATE
+=========================== */
+
+const GRID_SIZE = 10;
+let MAX_HP = 10;
+let hp = MAX_HP;
+let gold = 0;
+let level = 1;
+
+let grid = [];
+let player = { x: 0, y: 0 };
+let enemies = [];
+let treasures = [];
+let exitTile = { x: 0, y: 0 };
+
+let inCombat = false;
+let currentEnemy = null;
+let currentEnemyIndex = -1;
+let playerBlocking = false;
+let lastPlayerPos = { x: 0, y: 0 };
+
+let inShop = false;
+let shopItems = []; // {x,y,item}
+let shopkeeper = null;
+let shopExit = null;
+
+const WEAPONS = [
+  { name: "Wooden Sword", min: 1, max: 3, special: "Beat Up", specialDmg: 30, cd: 3, tier: 0 },
+  { name: "Stone Sword", min: 2, max: 5, special: "Heavy Swing", specialDmg: 40, cd: 3, tier: 1 },
+  { name: "Iron Sword", min: 3, max: 7, special: "Cleave", specialDmg: 50, cd: 3, tier: 2 },
+  { name: "Steel Sword", min: 4, max: 9, special: "Brutal Strike", specialDmg: 60, cd: 3, tier: 3 }
+];
+
+let weapon = { ...WEAPONS[0], cdLeft: 0 };
+
+/* ===========================
+   UTILS
+=========================== */
+
+function rand(min, max) { return Math.floor(Math.random() * (max - min + 1)) + min; }
+function eq(a, b) { return a.x === b.x && a.y === b.y; }
+function inside(x, y) { return x >= 0 && y >= 0 && x < GRID_SIZE && y < GRID_SIZE; }
+
+/* ===========================
+   DUNGEON GENERATION
+=========================== */
+
+function randomEmpty(exclude = []) {
+  while (true) {
+    let x = rand(0, GRID_SIZE - 1);
+    let y = rand(0, GRID_SIZE - 1);
+    if (grid[y][x] === "wall") continue;
+    if (exclude.some(p => eq(p, {x,y}))) continue;
+    return { x, y };
+  }
+}
+
+function generateDungeon() {
+  inShop = false;
+  shopItems = [];
+  shopkeeper = null;
+  shopExit = null;
+
+  grid = [];
+  for (let y = 0; y < GRID_SIZE; y++) {
+    let row = [];
+    for (let x = 0; x < GRID_SIZE; x++) {
+      if (x === 0 || y === 0 || x === GRID_SIZE - 1 || y === GRID_SIZE - 1)
+        row.push("wall");
+      else
+        row.push(Math.random() < 0.15 ? "wall" : "floor");
+    }
+    grid.push(row);
+  }
+
+  player = randomEmpty();
+  exitTile = randomEmpty([player]);
+
+  treasures = [];
+  const numTreasure = 3 + Math.floor(level / 3);
+  for (let i = 0; i < numTreasure; i++) treasures.push(randomEmpty([player, exitTile, ...treasures]));
+
+  enemies = [];
+  const numEnemies = 3 + Math.floor(level / 2);
+  for (let i = 0; i < numEnemies; i++) enemies.push(randomEmpty([player, exitTile, ...treasures, ...enemies]));
+
+  setMessage("Explore the dungeon.");
+}
+
+/* ===========================
+   SHOP GENERATION (EVERY 10 LEVELS)
+=========================== */
+
+function generateShop() {
+  inShop = true;
+  enemies = [];
+  treasures = [];
+  exitTile = { x: -1, y: -1 };
+
+  grid = [];
+  for (let y = 0; y < GRID_SIZE; y++) {
+    let row = [];
+    for (let x = 0; x < GRID_SIZE; x++) {
+      if (y === 0 || y === GRID_SIZE - 1 || x === 0 || x === GRID_SIZE - 1)
+        row.push("wall");
+      else
+        row.push("floor");
+    }
+    grid.push(row);
+  }
+
+  // Place player near bottom center
+  player = { x: 5, y: 8 };
+
+  // Shopkeeper near bottom middle
+  shopkeeper = { x: 5, y: 6 };
+  // Exit tile behind shopkeeper (must go behind him)
+  shopExit = { x: 5, y: 5 };
+
+  // Items laid out in two rows, Zelda-style
+  shopItems = [];
+
+  const itemsDefs = [
+    { symbol: "💖", name: "+5 Max HP", cost: 20, type: "maxhp" },
+    { symbol: "❤️", name: "Full Heal", cost: 10, type: "heal" },
+    { symbol: "⚔️", name: "Weapon Upgrade", cost: 30, type: "weapon" },
+    { symbol: "✨", name: "Special +5", cost: 25, type: "special" },
+    { symbol: "💖", name: "+5 Max HP", cost: 20, type: "maxhp" },
+    { symbol: "❤️", name: "Full Heal", cost: 10, type: "heal" }
+  ];
+
+  const positions = [
+    { x: 3, y: 3 }, { x: 5, y: 3 }, { x: 7, y: 3 },
+    { x: 3, y: 4 }, { x: 5, y: 4 }, { x: 7, y: 4 }
+  ];
+
+  for (let i = 0; i < itemsDefs.length; i++) {
+    shopItems.push({
+      x: positions[i].x,
+      y: positions[i].y,
+      item: itemsDefs[i]
+    });
+  }
+
+  setMessage("Welcome to the shop! Walk over items to buy. Go behind the shopkeeper to leave.");
+}
+
+/* ===========================
+   RENDERING
+=========================== */
+
+const gridEl = document.getElementById("grid");
+const hpEl = document.getElementById("hp");
+const goldEl = document.getElementById("gold");
+const levelEl = document.getElementById("level");
+const weaponNameEl = document.getElementById("weapon-name");
+const msgEl = document.getElementById("message");
+
+function setMessage(text) {
+  msgEl.textContent = text;
+}
+
+function render() {
+  gridEl.innerHTML = "";
+  hpEl.textContent = hp;
+  goldEl.textContent = gold;
+  levelEl.textContent = level;
+  weaponNameEl.textContent = weapon.name;
+
+  for (let y = 0; y < GRID_SIZE; y++) {
+    for (let x = 0; x < GRID_SIZE; x++) {
+      let cell = document.createElement("div");
+      cell.classList.add("cell");
+
+      if (grid[y][x] === "wall") cell.classList.add("wall");
+      else cell.classList.add("floor");
+
+      const pos = { x, y };
+
+      if (inShop) {
+        if (shopItems.some(s => eq(s, pos))) {
+          cell.classList.add("shop-item");
+          const s = shopItems.find(si => eq(si, pos));
+          cell.textContent = s.item.symbol;
+        }
+        if (shopkeeper && eq(shopkeeper, pos)) {
+          cell.classList.add("shopkeeper");
+          cell.textContent = "👺";
+        }
+      } else {
+        if (enemies.some(e => eq(e, pos))) {
+          cell.classList.add("enemy");
+          cell.textContent = "☠";
+        }
+        if (treasures.some(t => eq(t, pos))) {
+          cell.classList.add("treasure");
+          cell.textContent = "★";
+        }
+        if (eq(exitTile, pos)) {
+          cell.classList.add("exit");
+          cell.textContent = "⇩";
+        }
+      }
+
+      if (eq(player, pos)) {
+        cell.classList.add("player");
+        cell.textContent = "@";
+      }
+
+      gridEl.appendChild(cell);
+    }
+  }
+}
+
+/* ===========================
+   ENEMY MOVEMENT
+=========================== */
+
+function moveEnemies() {
+  if (inShop) return;
+  const newEnemies = [];
+  for (let enemy of enemies) {
+    let dx = Math.sign(player.x - enemy.x);
+    let dy = Math.sign(player.y - enemy.y);
+
+    const options = [];
+    if (dx !== 0) options.push({ x: enemy.x + dx, y: enemy.y });
+    if (dy !== 0) options.push({ x: enemy.x, y: enemy.y + dy });
+
+    if (Math.random() < 0.5) options.reverse();
+
+    let moved = false;
+    for (let opt of options) {
+      if (!inside(opt.x, opt.y)) continue;
+      if (grid[opt.y][opt.x] === "wall") continue;
+      enemy = opt;
+      moved = true;
+      break;
+    }
+
+    if (!moved) {
+      const dirs = [
+        { x: 1, y: 0 }, { x: -1, y: 0 },
+        { x: 0, y: 1 }, { x: 0, y: -1 }
+      ];
+      dirs.sort(() => Math.random() - 0.5);
+      for (let d of dirs) {
+        const nx = enemy.x + d.x;
+        const ny = enemy.y + d.y;
+        if (!inside(nx, ny)) continue;
+        if (grid[ny][nx] === "wall") continue;
+        enemy = { x: nx, y: ny };
+        break;
+      }
+    }
+
+    newEnemies.push(enemy);
+  }
+  enemies = newEnemies;
+}
+
+/* ===========================
+   SHOP LOGIC
+=========================== */
+
+function handleShopStep() {
+  // Buy items by walking over them
+  const idx = shopItems.findIndex(s => eq(s, player));
+  if (idx !== -1) {
+    const s = shopItems[idx];
+    const item = s.item;
+    if (gold < item.cost) {
+      setMessage(`Not enough gold for ${item.name} (${item.cost}).`);
+      return;
+    }
+    gold -= item.cost;
+    shopItems.splice(idx, 1); // item disappears
+
+    if (item.type === "maxhp") {
+      MAX_HP += 5;
+      hp = MAX_HP;
+      setMessage("Your max HP increased by 5!");
+    } else if (item.type === "heal") {
+      hp = MAX_HP;
+      setMessage("You feel refreshed. HP fully restored.");
+    } else if (item.type === "weapon") {
+      if (weapon.tier < WEAPONS.length - 1) {
+        weapon = { ...WEAPONS[weapon.tier + 1], cdLeft: 0 };
+        setMessage(`You bought a ${weapon.name}!`);
+      } else {
+        setMessage("You already have the best weapon.");
+      }
+    } else if (item.type === "special") {
+      weapon.specialDmg += 5;
+      setMessage("Your special attack grows stronger!");
+    }
+    return;
+  }
+
+  // Exit shop by going behind shopkeeper
+  if (shopExit && eq(player, shopExit)) {
+    level++;
+    MAX_HP += 5;
+    hp = MAX_HP;
+    weapon.specialDmg += 2;
+    setMessage("You leave the shop and go deeper...");
+    generateDungeon();
+    render();
+  }
+}
+
+/* ===========================
+   MOVEMENT
+=========================== */
+
+function movePlayer(dx, dy) {
+  if (inCombat) return;
+
+  let nx = player.x + dx;
+  let ny = player.y + dy;
+
+  if (!inside(nx, ny) || grid[ny][nx] === "wall") return;
+
+  lastPlayerPos = { ...player };
+  player.x = nx;
+  player.y = ny;
+
+  if (inShop) {
+    handleShopStep();
+    render();
+    return;
+  }
+
+  // Check enemy collision -> battle
+  let enemyIndex = enemies.findIndex(e => eq(e, player));
+  if (enemyIndex !== -1) {
+    startBattle(enemyIndex);
+    render();
+    return;
+  }
+
+  // Treasure
+  let tIndex = treasures.findIndex(t => eq(t, player));
+  if (tIndex !== -1) {
+    treasures.splice(tIndex, 1);
+    gold += 10;
+    setMessage("You found treasure! +10 gold.");
+  }
+
+  // Exit -> next level or shop
+  if (eq(player, exitTile)) {
+    level++;
+    MAX_HP += 5;
+    hp = MAX_HP;
+    weapon.specialDmg += 2;
+
+    if (level % 10 === 0) {
+      generateShop();
+    } else {
+      generateDungeon();
+    }
+    render();
+    return;
+  }
+
+  // Enemies move after you
+  moveEnemies();
+
+  // Enemy moves onto you -> battle
+  let enemyIndex2 = enemies.findIndex(e => eq(e, player));
+  if (enemyIndex2 !== -1) {
+    startBattle(enemyIndex2);
+    render();
+    return;
+  }
+
+  render();
+}
+
+/* ===========================
+   BATTLE SYSTEM
+=========================== */
+
+const battleScreen = document.getElementById("battle-screen");
+const playerHpFill = document.getElementById("player-hp-fill");
+const playerHpText = document.getElementById("player-hp-text");
+const playerWeaponText = document.getElementById("player-weapon");
+const playerSpecialText = document.getElementById("player-special");
+
+const enemyHpFill = document.getElementById("enemy-hp-fill");
+const enemyHpText = document.getElementById("enemy-hp-text");
+const enemyDmgText = document.getElementById("enemy-dmg");
+const enemyNameText = document.getElementById("enemy-name");
+
+const logEl = document.getElementById("battle-log");
+
+function log(msg) {
+  let p = document.createElement("div");
+  p.textContent = msg;
+  logEl.appendChild(p);
+  logEl.scrollTop = logEl.scrollHeight;
+}
+
+function updateBattleUI() {
+  playerHpFill.style.width = (hp / MAX_HP * 100) + "%";
+  playerHpText.textContent = `HP: ${hp} / ${MAX_HP}`;
+  playerWeaponText.textContent = `Weapon: ${weapon.name} (${weapon.min}-${weapon.max})`;
+  playerSpecialText.textContent = `Special: ${weapon.special} (${weapon.specialDmg} dmg, cd ${weapon.cd})` +
+    (weapon.cdLeft > 0 ? ` — ${weapon.cdLeft} turns` : "");
+
+  enemyHpFill.style.width = (currentEnemy.hp / currentEnemy.maxHp * 100) + "%";
+  enemyHpText.textContent = `HP: ${currentEnemy.hp} / ${currentEnemy.maxHp}`;
+  enemyDmgText.textContent = `Damage: ${currentEnemy.min}-${currentEnemy.max}`;
+}
+
+function startBattle(index) {
+  inCombat = true;
+  currentEnemyIndex = index;
+
+  let base = 5 + level * 2;
+  let hpVal = rand(base, base + 3);
+
+  currentEnemy = {
+    name: "Dungeon Foe",
+    hp: hpVal,
+    maxHp: hpVal,
+    min: 1 + Math.floor(level / 2),
+    max: 2 + Math.floor(level / 2)
+  };
+
+  logEl.innerHTML = "";
+  log("An enemy appears!");
+
+  battleScreen.style.display = "flex";
+  updateBattleUI();
+}
+
+function endBattle() {
+  inCombat = false;
+  currentEnemy = null;
+  battleScreen.style.display = "none";
+  render();
+}
+
+function enemyTurn() {
+  if (weapon.cdLeft > 0) weapon.cdLeft--;
+
+  let dmg = rand(currentEnemy.min, currentEnemy.max);
+  if (playerBlocking) { dmg = Math.ceil(dmg / 2); playerBlocking = false; }
+
+  hp -= dmg;
+  log(`Enemy hits you for ${dmg}.`);
+
+  if (hp <= 0) {
+    hp = 0;
+    log("You died...");
+    setTimeout(() => location.reload(), 1000);
+  }
+}
+
+function victory() {
+  log("Enemy defeated!");
+  enemies.splice(currentEnemyIndex, 1);
+
+  let g = rand(5, 15);
+  gold += g;
+  log(`You gain ${g} gold.`);
+
+  if (Math.random() < 0.35 && weapon.tier < WEAPONS.length - 1) {
+    weapon = { ...WEAPONS[weapon.tier + 1], cdLeft: 0 };
+    log(`You found a ${weapon.name}!`);
+  }
+
+  setTimeout(endBattle, 800);
+}
+
+/* ===========================
+   PLAYER BATTLE ACTIONS
+=========================== */
+
+document.getElementById("btn-attack").onclick = () => {
+  if (!inCombat) return;
+  let dmg = rand(weapon.min, weapon.max);
+  currentEnemy.hp -= dmg;
+  log(`You hit for ${dmg}.`);
+
+  if (currentEnemy.hp <= 0) return victory();
+
+  enemyTurn();
+  updateBattleUI();
+};
+
+document.getElementById("btn-block").onclick = () => {
+  if (!inCombat) return;
+  playerBlocking = true;
+  log("You brace yourself.");
+  enemyTurn();
+  updateBattleUI();
+};
+
+document.getElementById("btn-counter").onclick = () => {
+  if (!inCombat) return;
+
+  const success = Math.random() < 0.6; // 60% chance
+
+  if (success) {
+    const dmg = rand(weapon.min, weapon.max) * 2;
+    currentEnemy.hp -= dmg;
+    log(`You COUNTER successfully! You deal ${dmg} damage and avoid the attack!`);
+
+    if (currentEnemy.hp <= 0) return victory();
+
+    updateBattleUI();
+    return;
+  }
+
+  log("Your counter failed!");
+  enemyTurn();
+  updateBattleUI();
+};
+
+document.getElementById("btn-special").onclick = () => {
+  if (!inCombat) return;
+  if (weapon.cdLeft > 0) return;
+
+  currentEnemy.hp -= weapon.specialDmg;
+  log(`You use ${weapon.special} for ${weapon.specialDmg}!`);
+  weapon.cdLeft = weapon.cd;
+
+  if (currentEnemy.hp <= 0) return victory();
+
+  enemyTurn();
+  updateBattleUI();
+};
+
+document.getElementById("btn-run").onclick = () => {
+  if (!inCombat) return;
+  if (Math.random() < 0.5) {
+    log("You escaped!");
+    player = { ...lastPlayerPos };
+    return setTimeout(endBattle, 500);
+  } else {
+    log("You failed to run!");
+    enemyTurn();
+    updateBattleUI();
+  }
+};
+
+/* ===========================
+   INPUT
+=========================== */
+
+window.addEventListener("keydown", e => {
+  let k = e.key.toLowerCase();
+  if (inCombat) return;
+
+  if (k === "w" || k === "arrowup") movePlayer(0, -1);
+  if (k === "s" || k === "arrowdown") movePlayer(0, 1);
+  if (k === "a" || k === "arrowleft") movePlayer(-1, 0);
+  if (k === "d" || k === "arrowright") movePlayer(1, 0);
+});
+
+document.getElementById("restart-btn").onclick = () => location.reload();
+
+/* ===========================
+   START GAME
+=========================== */
+
+generateDungeon();
+render();
+</script>
+</body>
+</html>
+

@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Kahoot Helper</title>
+</head>
+<body>
+    <h1>Kahoot Speed Search</h1>
+    <input type="text" id="question" placeholder="Paste question here" size="60">
+    <button onclick="searchQuestion()">Search</button>
+
+    <script>
+        function searchQuestion() {
+            let q = document.getElementById("question").value;
+            let url = "https://www.google.com/search?q=" + encodeURIComponent(q);
+            window.open(url, "_blank");
+        }
+    </script>
+</body>
+</html>

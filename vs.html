@@ -1,0 +1,405 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Checklist Chess — AI Clock Edition</title>
+<style>
+/* ===================== GLOBAL ===================== */
+body {
+  margin: 0;
+  font-family: "Courier New", monospace;
+  background: #111;
+  color: #f5f5f5;
+  display: flex;
+  height: 100vh;
+  overflow: hidden;
+}
+
+#game-container {
+  display: flex;
+  flex: 1;
+}
+
+/* ===================== BOARD ===================== */
+#board-area {
+  flex: 1;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  position: relative;
+}
+
+#board {
+  display: grid;
+  grid-template-columns: repeat(8, 48px);
+  grid-template-rows: repeat(8, 48px);
+  border: 4px solid #333;
+  image-rendering: pixelated;
+}
+
+.square {
+  width: 48px;
+  height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 24px;
+  cursor: pointer;
+}
+
+.light { background: #c2b28f; }
+.dark { background: #7a5f3b; }
+
+.selected { outline: 3px solid #ffeb3b; }
+.highlight { box-shadow: inset 0 0 0 3px #4caf50; }
+
+.piece { text-shadow: 1px 1px #000; }
+.white { color: #f8f8f8; }
+.black { color: #111; }
+
+/* ===================== PIXEL ART CHESS CLOCK ===================== */
+#ai-clock {
+  position: absolute;
+  right: -90px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 70px;
+  height: 120px;
+  background: #222;
+  border: 4px solid #444;
+  box-shadow: 0 0 0 4px #000;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 6px;
+}
+
+.clock-face {
+  flex: 1;
+  background: #333;
+  border: 3px solid #555;
+  margin: 3px 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+}
+
+#ai-button {
+  cursor: pointer;
+  background: #444;
+  border: 3px solid #666;
+  color: #eee;
+  font-size: 12px;
+  padding: 4px;
+  text-align: center;
+  user-select: none;
+}
+
+#ai-button.disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+/* ===================== CHECKLIST ===================== */
+#checklist-wrapper {
+  width: 280px;
+  position: relative;
+  background: #1b1b1b;
+  border-left: 3px solid #333;
+  display: flex;
+}
+
+#checklist-panel {
+  width: 260px;
+  background: #222;
+  padding: 12px;
+  box-sizing: border-box;
+  transform: translateX(0);
+  transition: transform 0.25s ease-out;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+}
+
+#checklist-panel.closed {
+  transform: translateX(260px);
+}
+
+/* FIXED ARROW — ALWAYS VISIBLE */
+#toggle-arrow {
+  width: 20px;
+  background: #333;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  user-select: none;
+  font-size: 18px;
+
+  position: absolute;
+  left: -20px;
+  top: 0;
+  bottom: 0;
+}
+
+#checklist-title {
+  font-size: 16px;
+  margin-bottom: 8px;
+  text-align: center;
+}
+
+#page-indicator {
+  font-size: 12px;
+  text-align: center;
+  margin-bottom: 8px;
+  color: #aaa;
+}
+
+#task-text {
+  background: #111;
+  border: 1px solid #444;
+  padding: 8px;
+  min-height: 80px;
+}
+
+label {
+  font-size: 13px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 8px;
+}
+
+#completed-count {
+  margin-top: 4px;
+  font-size: 12px;
+  color: #ccc;
+}
+
+.btn {
+  padding: 4px 8px;
+  font-size: 12px;
+  border: 1px solid #555;
+  background: #333;
+  color: #eee;
+  cursor: pointer;
+  border-radius: 3px;
+}
+
+.btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+#status-log {
+  margin-top: 10px;
+  font-size: 12px;
+  color: #ccc;
+  min-height: 32px;
+  white-space: pre-line;
+}
+</style>
+</head>
+<body>
+
+<div id="game-container">
+
+  <div id="board-area">
+    <div id="board"></div>
+
+    <!-- Pixel-art chess clock -->
+    <div id="ai-clock">
+      <div class="clock-face">YOU</div>
+      <div id="ai-button" class="disabled">AI MOVE</div>
+      <div class="clock-face">AI</div>
+    </div>
+  </div>
+
+  <!-- Checklist -->
+  <div id="checklist-wrapper">
+    <div id="checklist-panel">
+      <div>
+        <div id="checklist-title">Checklist Book</div>
+        <div id="page-indicator">Page 1 / 15</div>
+        <div id="task-text"></div>
+
+        <label>
+          <input type="checkbox" id="task-complete" />
+          Mark task complete
+        </label>
+
+        <div id="completed-count">0 / 15 done</div>
+
+        <div style="display:flex;justify-content:space-between;margin-top:10px;">
+          <button class="btn" id="prev-page">Prev</button>
+          <button class="btn" id="next-page">Next</button>
+        </div>
+      </div>
+
+      <div id="status-log"></div>
+    </div>
+
+    <!-- FIXED ARROW -->
+    <div id="toggle-arrow">&lt;</div>
+  </div>
+
+</div>
+<script>
+/* ============================================================
+   AI ENGINE (Medium Strength)
+   ============================================================ */
+
+const pieceValues = {
+  K: 1000,
+  Q: 9,
+  R: 5,
+  B: 3,
+  N: 3,
+  P: 1
+};
+
+function generateAllMoves(color) {
+  const moves = [];
+  for (let r = 0; r < 8; r++) {
+    for (let c = 0; c < 8; c++) {
+      const piece = board[r][c];
+      if (!piece || piece.color !== color) continue;
+
+      for (let tr = 0; tr < 8; tr++) {
+        for (let tc = 0; tc < 8; tc++) {
+          if (tr === r && tc === c) continue;
+          const target = board[tr][tc];
+          if (target && target.color === color) continue;
+
+          if (isLegalMove(piece, r, c, tr, tc)) {
+            moves.push({
+              sr: r, sc: c,
+              tr, tc,
+              pieceType: piece.type,
+              capture: target ? target.type : null
+            });
+          }
+        }
+      }
+    }
+  }
+  return moves;
+}
+
+function evaluateMove(mv) {
+  let score = 0;
+
+  // Capture value
+  if (mv.capture) {
+    score += pieceValues[mv.capture] * 10;
+    if (mv.capture === "K") score += 10000;
+  }
+
+  // Center control
+  const center = [
+    { r: 3, c: 3 }, { r: 3, c: 4 },
+    { r: 4, c: 3 }, { r: 4, c: 4 }
+  ];
+  for (const cs of center) {
+    if (mv.tr === cs.r && mv.tc === cs.c) score += 3;
+  }
+
+  // Simulate move for safety
+  const originalPiece = board[mv.sr][mv.sc];
+  const originalTarget = board[mv.tr][mv.tc];
+
+  board[mv.tr][mv.tc] = originalPiece;
+  board[mv.sr][mv.sc] = null;
+
+  const unsafe = isSquareAttackedBy("white", mv.tr, mv.tc);
+  if (unsafe) score -= pieceValues[mv.pieceType] * 8;
+
+  // Undo
+  board[mv.sr][mv.sc] = originalPiece;
+  board[mv.tr][mv.tc] = originalTarget;
+
+  // Randomness
+  score += Math.random();
+
+  return score;
+}
+
+function isSquareAttackedBy(color, tr, tc) {
+  for (let r = 0; r < 8; r++) {
+    for (let c = 0; c < 8; c++) {
+      const piece = board[r][c];
+      if (!piece || piece.color !== color) continue;
+
+      if (isLegalMove(piece, r, c, tr, tc)) return true;
+    }
+  }
+  return false;
+}
+
+function aiMove() {
+  if (currentTurn !== "black") return;
+
+  const moves = generateAllMoves("black");
+  if (moves.length === 0) {
+    statusLog.textContent = "AI has no moves. You win!";
+    aiButton.classList.add("disabled");
+    return;
+  }
+
+  let bestScore = -999999;
+  let bestMoves = [];
+
+  for (const mv of moves) {
+    const score = evaluateMove(mv);
+    if (score > bestScore) {
+      bestScore = score;
+      bestMoves = [mv];
+    } else if (score === bestScore) {
+      bestMoves.push(mv);
+    }
+  }
+
+  const chosen = bestMoves[Math.floor(Math.random() * bestMoves.length)];
+
+  tryMove(chosen.sr, chosen.sc, chosen.tr, chosen.tc);
+  renderBoard();
+
+  currentTurn = "white";
+  aiButton.classList.add("disabled");
+  aiButton.textContent = "AI MOVE";
+}
+
+/* ============================================================
+   AI CLOCK BUTTON
+   ============================================================ */
+
+aiButton.onclick = () => {
+  if (aiButton.classList.contains("disabled")) return;
+  if (currentTurn !== "black") return;
+
+  aiButton.textContent = "THINKING...";
+  aiButton.classList.add("disabled");
+
+  setTimeout(() => {
+    aiMove();
+  }, 300);
+};
+
+/* ============================================================
+   INIT
+   ============================================================ */
+
+function init() {
+  setupPieces();
+  renderBoard();
+  updateChecklistPage();
+  statusLog.textContent =
+    "Your turn.\nMove as white, then press the chess clock to let the AI move.";
+  aiButton.classList.add("disabled");
+}
+
+init();
+</script>
+</body>
+</html>

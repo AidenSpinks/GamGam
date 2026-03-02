@@ -1,0 +1,462 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Electric Box Expanded</title>
+<style>
+  body {
+    margin: 0;
+    display: flex;
+    height: 100vh;
+    background: #111;
+    color: #eee;
+    font-family: system-ui, sans-serif;
+  }
+
+  #sidebar {
+    width: 260px;
+    background: #181818;
+    padding: 16px;
+    border-right: 1px solid #333;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    box-sizing: border-box;
+  }
+
+  #grid {
+    display: grid;
+    grid-template-columns: repeat(10, 40px);
+    grid-template-rows: repeat(10, 40px);
+    gap: 2px;
+    padding: 6px;
+    background: #222;
+    border-radius: 8px;
+    margin: auto;
+  }
+
+  .cell {
+    width: 40px;
+    height: 40px;
+    background: #111;
+    border: 1px solid #333;
+    border-radius: 4px;
+    position: relative;
+    cursor: pointer;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+  }
+
+  .powered { box-shadow: 0 0 10px #0ff; border-color: #0ff; }
+
+  .comp-source { background: #044; }
+  .comp-target { background: #440; }
+  .comp-wire { background: #666; }
+  .comp-block { background: #444; }
+
+  .comp-bulb { background: #333; }
+  .comp-bulb.powered { background: #ff0; box-shadow: 0 0 10px #ff0; }
+
+  .comp-sensor { background: #224; }
+  .comp-sensor.lit { background: #55f; box-shadow: 0 0 10px #55f; }
+
+  .palette-item {
+    width: 60px;
+    height: 60px;
+    background: #222;
+    border: 2px solid #555;
+    border-radius: 6px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    cursor: pointer;
+    font-size: 11px;
+    text-align: center;
+  }
+
+  .palette-item.selected {
+    border-color: #0ff;
+    background: #033;
+  }
+
+  button {
+    background: #0a84ff;
+    border: none;
+    padding: 6px 10px;
+    border-radius: 4px;
+    color: #fff;
+    cursor: pointer;
+    font-size: 13px;
+  }
+
+  button.secondary { background: #444; }
+
+  #inventory {
+    font-size: 13px;
+  }
+
+  #status {
+    font-size: 13px;
+    color: #ccc;
+    min-height: 20px;
+  }
+</style>
+</head>
+<body>
+
+<div id="sidebar">
+  <h2>Electric Box+</h2>
+
+  <label for="missionSelect">Mission:</label>
+  <select id="missionSelect"></select>
+
+  <div><strong>Inventory:</strong></div>
+  <div id="inventory"></div>
+
+  <div><strong>Palette:</strong></div>
+  <div id="palette" style="display:flex;flex-wrap:wrap;gap:8px;">
+    <div class="palette-item" data-type="wire">Wire</div>
+    <div class="palette-item" data-type="bulb">Bulb</div>
+    <div class="palette-item" data-type="sensor">Sensor</div>
+    <div class="palette-item" data-type="erase">Erase</div>
+  </div>
+
+  <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap;">
+    <button id="runBtn">Run</button>
+    <button id="resetBtn" class="secondary">Reset</button>
+  </div>
+
+  <div id="status"></div>
+
+  <div style="font-size:11px;color:#888;margin-top:auto;">
+    Bulb: emits light in 4 directions when powered.<br>
+    Sensor: if any adjacent tile is lit, it outputs electricity onto wires only.
+  </div>
+</div>
+
+<div id="grid"></div>
+
+<script>
+/* ============================================================
+   COMPONENT TYPES
+============================================================ */
+const EMPTY = "empty";
+const SOURCE = "source";
+const TARGET = "target";
+const WIRE = "wire";
+const BLOCK = "block";
+const BULB = "bulb";
+const SENSOR = "sensor";
+
+/* ============================================================
+   MISSIONS
+============================================================ */
+const missions = [
+  {
+    name: "Mission 1: Simple Light",
+    inventory: { wire: 20, bulb: 1, sensor: 1 },
+    grid: [
+      "..........",
+      "..........",
+      "..........",
+      "...###....",
+      "S..###..T.",
+      "...###....",
+      "..........",
+      "..........",
+      "..........",
+      ".........."
+    ]
+  },
+  {
+    name: "Mission 2: Maze",
+    inventory: { wire: 30, bulb: 2, sensor: 2 },
+    grid: [
+      "S########.",
+      ".#......#.",
+      ".#.####.#.",
+      ".#.#..#.#.",
+      ".#.#.##.#.",
+      ".#.#....#.",
+      ".#.######.",
+      ".#........",
+      ".########T",
+      ".........."
+    ]
+  }
+];
+
+let currentMission = 0;
+let gridData = [];
+let inventory = {};
+let selectedTool = "wire";
+
+const gridEl = document.getElementById("grid");
+const paletteEl = document.getElementById("palette");
+const missionSelect = document.getElementById("missionSelect");
+const inventoryEl = document.getElementById("inventory");
+const statusEl = document.getElementById("status");
+
+/* ============================================================
+   INIT MISSIONS DROPDOWN
+============================================================ */
+missions.forEach((m, i) => {
+  const opt = document.createElement("option");
+  opt.value = i;
+  opt.textContent = m.name;
+  missionSelect.appendChild(opt);
+});
+
+missionSelect.addEventListener("change", () => {
+  currentMission = parseInt(missionSelect.value, 10);
+  loadMission();
+});
+
+/* ============================================================
+   LOAD MISSION
+============================================================ */
+function loadMission() {
+  const m = missions[currentMission];
+  inventory = JSON.parse(JSON.stringify(m.inventory));
+
+  gridData = [];
+  for (let r = 0; r < 10; r++) {
+    const row = [];
+    for (let c = 0; c < 10; c++) {
+      const ch = m.grid[r][c];
+      let type = EMPTY;
+      if (ch === "S") type = SOURCE;
+      if (ch === "T") type = TARGET;
+      if (ch === "#") type = BLOCK;
+      row.push({ type, powered: false, lit: false });
+    }
+    gridData.push(row);
+  }
+
+  renderInventory();
+  renderGrid();
+  statusEl.textContent = "Build your solution, then press Run.";
+}
+
+/* ============================================================
+   RENDER INVENTORY
+============================================================ */
+function renderInventory() {
+  inventoryEl.innerHTML = `
+    Wires: ${inventory.wire}<br>
+    Bulbs: ${inventory.bulb}<br>
+    Sensors: ${inventory.sensor}
+  `;
+}
+
+/* ============================================================
+   RENDER GRID
+============================================================ */
+function renderGrid() {
+  gridEl.innerHTML = "";
+  for (let r = 0; r < 10; r++) {
+    for (let c = 0; c < 10; c++) {
+      const cell = gridData[r][c];
+      const el = document.createElement("div");
+      el.className = "cell";
+      el.dataset.r = r;
+      el.dataset.c = c;
+
+      if (cell.type === SOURCE) el.classList.add("comp-source");
+      if (cell.type === TARGET) el.classList.add("comp-target");
+      if (cell.type === WIRE) el.classList.add("comp-wire");
+      if (cell.type === BLOCK) el.classList.add("comp-block");
+      if (cell.type === BULB) el.classList.add("comp-bulb");
+      if (cell.type === SENSOR) el.classList.add("comp-sensor");
+
+      if (cell.powered) el.classList.add("powered");
+      if (cell.lit && cell.type === SENSOR) el.classList.add("lit");
+      if (cell.powered && cell.type === BULB) el.classList.add("powered");
+
+      el.addEventListener("click", onCellClick);
+      gridEl.appendChild(el);
+    }
+  }
+}
+
+/* ============================================================
+   PALETTE
+============================================================ */
+paletteEl.addEventListener("click", e => {
+  const item = e.target.closest(".palette-item");
+  if (!item) return;
+  selectedTool = item.dataset.type;
+
+  [...paletteEl.children].forEach(p =>
+    p.classList.toggle("selected", p.dataset.type === selectedTool)
+  );
+});
+
+/* ============================================================
+   CELL CLICK
+============================================================ */
+function onCellClick(e) {
+  const r = +e.currentTarget.dataset.r;
+  const c = +e.currentTarget.dataset.c;
+  const cell = gridData[r][c];
+
+  if (cell.type === SOURCE || cell.type === TARGET || cell.type === BLOCK) return;
+
+  if (selectedTool === "erase") {
+    if (cell.type !== EMPTY) {
+      if (inventory[cell.type] !== undefined) {
+        inventory[cell.type]++; // refund if it was a placeable
+      }
+      cell.type = EMPTY;
+    }
+  } else {
+    if (inventory[selectedTool] > 0) {
+      if (cell.type !== EMPTY) return; // can't overwrite
+      cell.type = selectedTool;
+      inventory[selectedTool]--;
+    }
+  }
+
+  renderInventory();
+  renderGrid();
+}
+
+/* ============================================================
+   SIMULATION (UPDATED SENSOR LOGIC)
+============================================================ */
+function resetPower() {
+  for (let r = 0; r < 10; r++)
+    for (let c = 0; c < 10; c++) {
+      gridData[r][c].powered = false;
+      gridData[r][c].lit = false;
+    }
+}
+
+function runSimulation() {
+  resetPower();
+
+  /* 1. Electricity from SOURCE (normal BFS) */
+  const q = [];
+  for (let r = 0; r < 10; r++)
+    for (let c = 0; c < 10; c++)
+      if (gridData[r][c].type === SOURCE) {
+        gridData[r][c].powered = true;
+        q.push([r, c]);
+      }
+
+  const dirs = [[1,0],[-1,0],[0,1],[0,-1]];
+
+  while (q.length) {
+    const [r, c] = q.shift();
+    for (const [dr, dc] of dirs) {
+      const nr = r + dr, nc = c + dc;
+      if (nr < 0 || nr >= 10 || nc < 0 || nc >= 10) continue;
+      const n = gridData[nr][nc];
+
+      // Electricity travels through wire, bulb, target
+      if ((n.type === WIRE || n.type === BULB || n.type === TARGET) && !n.powered) {
+        n.powered = true;
+        q.push([nr, nc]);
+      }
+    }
+  }
+
+  /* 2. Light propagation from powered bulbs */
+  for (let r = 0; r < 10; r++)
+    for (let c = 0; c < 10; c++)
+      if (gridData[r][c].type === BULB && gridData[r][c].powered)
+        castLight(r, c);
+
+  /* 3. Sensors detect light (but do NOT spread power yet) */
+  const sensorsToActivate = [];
+
+  for (let r = 0; r < 10; r++)
+    for (let c = 0; c < 10; c++) {
+      const cell = gridData[r][c];
+      if (cell.type !== SENSOR) continue;
+
+      for (const [dr, dc] of dirs) {
+        const nr = r + dr, nc = c + dc;
+        if (nr < 0 || nr >= 10 || nc < 0 || nc >= 10) continue;
+        if (gridData[nr][nc].lit) {
+          sensorsToActivate.push([r, c]);
+          break;
+        }
+      }
+    }
+
+  /* 4. Sensors output electricity ONLY onto wires */
+  const wireQueue = [];
+
+  for (const [r, c] of sensorsToActivate) {
+    gridData[r][c].powered = true; // sensor is active
+
+    for (const [dr, dc] of dirs) {
+      const nr = r + dr, nc = c + dc;
+      if (nr < 0 || nr >= 10 || nc < 0 || nc >= 10) continue;
+
+      if (gridData[nr][nc].type === WIRE && !gridData[nr][nc].powered) {
+        gridData[nr][nc].powered = true;
+        wireQueue.push([nr, nc]);
+      }
+    }
+  }
+
+  // BFS through wires only
+  while (wireQueue.length) {
+    const [r, c] = wireQueue.shift();
+    for (const [dr, dc] of dirs) {
+      const nr = r + dr, nc = c + dc;
+      if (nr < 0 || nr >= 10 || nc < 0 || nc >= 10) continue;
+
+      const n = gridData[nr][nc];
+      if ((n.type === WIRE || n.type === TARGET) && !n.powered) {
+        n.powered = true;
+        wireQueue.push([nr, nc]);
+      }
+    }
+  }
+
+  /* 5. Re-render and check win */
+  renderGrid();
+
+  let win = false;
+  for (let r = 0; r < 10; r++)
+    for (let c = 0; c < 10; c++)
+      if (gridData[r][c].type === TARGET && gridData[r][c].powered)
+        win = true;
+
+  statusEl.textContent = win ? "Mission Complete!" : "Target not powered.";
+}
+
+/* ============================================================
+   LIGHT CASTING
+============================================================ */
+function castLight(r, c) {
+  const dirs = [[1,0],[-1,0],[0,1],[0,-1]];
+  for (const [dr, dc] of dirs) {
+    let nr = r + dr, nc = c + dc;
+    while (nr >= 0 && nr < 10 && nc >= 0 && nc < 10) {
+      const cell = gridData[nr][nc];
+      if (cell.type === BLOCK) break;
+      cell.lit = true;
+      nr += dr;
+      nc += dc;
+    }
+  }
+}
+
+/* ============================================================
+   BUTTONS
+============================================================ */
+document.getElementById("runBtn").addEventListener("click", runSimulation);
+document.getElementById("resetBtn").addEventListener("click", loadMission);
+
+/* ============================================================
+   START
+============================================================ */
+loadMission();
+</script>
+</body>
+</html>
