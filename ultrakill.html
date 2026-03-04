@@ -176,13 +176,15 @@ const player = {
   recoil: 0,
   recoilDecay: 0.85,
   parryWindow: 0,
-  parryDuration: 200
+  parryDuration: 200,
+  hitstop: 0
 };
 
 let bullets = [];
 let enemies = [];
 let particles = [];
 let coins = [];
+let projectiles = []; // ranged enemy shots
 let time = 0;
 let wave = 1;
 let spawnTimer = 0;
@@ -199,16 +201,34 @@ function spawnEnemy() {
   else if (side === 2) { x = Math.random() * canvas.width; y = canvas.height + margin; }
   else { x = -margin; y = Math.random() * canvas.height; }
 
-  enemies.push({
-    x, y,
-    vx: 0,
-    vy: 0,
-    speed: 0.25 + 0.02 * wave,
-    size: 16,
-    hp: 30 + 5 * wave,
-    color: "#ff4444",
-    jitter: 0,
-  });
+  // 25% chance to spawn ranged enemy
+  if (Math.random() < 0.25) {
+    enemies.push({
+      x, y,
+      vx: 0,
+      vy: 0,
+      speed: 0.18,
+      size: 18,
+      hp: 45 + 5 * wave,
+      color: "#66aaff",
+      jitter: 0,
+      ranged: true,
+      shootCooldown: 800 + Math.random() * 400
+    });
+  } else {
+    enemies.push({
+      x, y,
+      vx: 0,
+      vy: 0,
+      speed: 0.25 + 0.02 * wave,
+      size: 16,
+      hp: 30 + 5 * wave,
+      color: "#ff4444",
+      jitter: 0,
+      ranged: false,
+      shootCooldown: 0
+    });
+  }
 }
 
 function addBlood(x, y, count = 10, color = "#ff2b2b") {
@@ -292,6 +312,10 @@ function shootShotgun() {
   const pellets = 6;
 
   const explosive = player.parryWindow > 0;
+
+  if (explosive) {
+    player.hitstop = 80; // freeze-frame on perfect parry shot
+  }
 
   for (let i = 0; i < pellets; i++) {
     const a = angle + (Math.random() - 0.5) * spread;
@@ -414,10 +438,12 @@ function resetGame() {
   player.dashTime = 0;
   player.slideTime = 0;
   player.parryWindow = 0;
+  player.hitstop = 0;
   bullets = [];
   enemies = [];
   particles = [];
   coins = [];
+  projectiles = [];
   wave = 1;
   spawnTimer = 0;
   spawnInterval = 900;
@@ -431,6 +457,13 @@ function resetGame() {
 // UPDATE
 function update(dt) {
   if (!gameRunning || gameOver) return;
+
+  // hitstop: freeze gameplay but still draw
+  if (player.hitstop > 0) {
+    player.hitstop -= dt;
+    if (player.hitstop < 0) player.hitstop = 0;
+    return;
+  }
 
   time += dt;
 
@@ -542,6 +575,70 @@ function update(dt) {
     }
   }
 
+  // PROJECTILES (ranged enemy shots)
+  for (let i = projectiles.length - 1; i >= 0; i--) {
+    const p = projectiles[i];
+
+    p.x += p.vx;
+    p.y += p.vy;
+
+    // parry check
+    if (!p.parried && player.parryWindow > 0) {
+      const dx = p.x - player.x;
+      const dy = p.y - player.y;
+      if (dx*dx + dy*dy < (player.size + p.size) ** 2) {
+        p.parried = true;
+
+        const target = getNearestEnemy(player.x, player.y);
+        if (target) {
+          const tx = target.x - p.x;
+          const ty = target.y - p.y;
+          const lenp = Math.hypot(tx, ty) || 1;
+          p.vx = (tx / lenp) * 12;
+          p.vy = (ty / lenp) * 12;
+        } else {
+          p.vx *= -1;
+          p.vy *= -1;
+        }
+
+        player.hitstop = 80;
+      }
+    }
+
+    // hit enemy if parried
+    if (p.parried) {
+      let hitEnemy = false;
+      for (const e of enemies) {
+        const dx = p.x - e.x;
+        const dy = p.y - e.y;
+        if (dx*dx + dy*dy < (e.size + p.size) ** 2) {
+          e.hp -= 40;
+          addBlood(e.x, e.y, 20, "#88ccff");
+          hitEnemy = true;
+          break;
+        }
+      }
+      if (hitEnemy) {
+        projectiles.splice(i, 1);
+        continue;
+      }
+    } else {
+      // hit player if not parried
+      const dx = p.x - player.x;
+      const dy = p.y - player.y;
+      if (dx*dx + dy*dy < (player.size + p.size) ** 2) {
+        player.hp -= 10;
+        projectiles.splice(i, 1);
+        continue;
+      }
+    }
+
+    // offscreen
+    if (p.x < -50 || p.x > canvas.width + 50 || p.y < -50 || p.y > canvas.height + 50) {
+      projectiles.splice(i, 1);
+    }
+  }
+
   // COINS
   for (let i = coins.length - 1; i >= 0; i--) {
     const c = coins[i];
@@ -584,8 +681,37 @@ function update(dt) {
     const dirx = dx / dist;
     const diry = dy / dist;
 
-    e.vx += dirx * e.speed * dt * 0.04;
-    e.vy += diry * e.speed * dt * 0.04;
+    if (!e.ranged) {
+      e.vx += dirx * e.speed * dt * 0.04;
+      e.vy += diry * e.speed * dt * 0.04;
+    } else {
+      const desiredDist = 260;
+      if (dist < desiredDist) {
+        e.vx -= dirx * e.speed * dt * 0.04;
+        e.vy -= diry * e.speed * dt * 0.04;
+      } else if (dist > desiredDist + 40) {
+        e.vx += dirx * e.speed * dt * 0.04;
+        e.vy += diry * e.speed * dt * 0.04;
+      }
+
+      e.shootCooldown -= dt;
+      if (e.shootCooldown <= 0) {
+        const dxp = player.x - e.x;
+        const dyp = player.y - e.y;
+        const lenp = Math.hypot(dxp, dyp) || 1;
+
+        projectiles.push({
+          x: e.x,
+          y: e.y,
+          vx: (dxp / lenp) * 6,
+          vy: (dyp / lenp) * 6,
+          size: 6,
+          parried: false
+        });
+
+        e.shootCooldown = 1200 + Math.random() * 400;
+      }
+    }
 
     const es = Math.hypot(e.vx, e.vy);
     const maxE = 4 + wave * 0.2;
@@ -735,6 +861,13 @@ function draw() {
     ctx.fillStyle = b.mode === "explosive" ? "#ffbb55" : "#ffd966";
     ctx.fillRect(-b.size * 0.5, -1.5, b.size * 2.5, 3);
     ctx.restore();
+  }
+
+  for (const p of projectiles) {
+    ctx.fillStyle = p.parried ? "#88ff88" : "#66aaff";
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, p.size, 0, TAU);
+    ctx.fill();
   }
 
   for (const e of enemies) {
