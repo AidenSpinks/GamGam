@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>Mini Grand Strategy – Tech & Military</title>
+<title>Mini Grand Strategy – Supply Chains & Tech</title>
 <style>
   body {
     margin: 0;
@@ -14,7 +14,6 @@
     overflow: hidden;
   }
 
-  /* SIDEBAR SCROLLS */
   #sidebar {
     flex: 1.4;
     display: flex;
@@ -56,7 +55,6 @@
     transition: box-shadow 0.15s, border-color 0.15s;
   }
 
-  /* PLAYER & ENEMY BORDERS */
   .tile.player {
     border: 3px solid #ffd700;
     box-shadow: 0 0 6px rgba(255, 215, 0, 0.7);
@@ -78,6 +76,15 @@
   #stats {
     font-size: 12px;
     line-height: 1.4;
+  }
+
+  #goods-bar {
+    margin-top: 4px;
+    font-size: 11px;
+    border-top: 1px solid #333;
+    padding-top: 3px;
+    white-space: nowrap;
+    overflow-x: auto;
   }
 
   #country-select {
@@ -138,6 +145,12 @@
     margin-left: 6px;
   }
 
+  .building-method {
+    font-size: 10px;
+    margin-left: 10px;
+    color: #ccc;
+  }
+
   .category-title {
     margin-top: 4px;
     font-weight: bold;
@@ -163,7 +176,6 @@
     margin-bottom: 2px;
   }
 
-  /* TECH TABS (big icon buttons) */
   #tech-tabs {
     display: flex;
     gap: 4px;
@@ -209,6 +221,9 @@
       <div><strong>Upkeep:</strong> <span id="stat-upkeep">0</span> / turn</div>
       <div><strong>Research:</strong> <span id="stat-research">0</span> pts</div>
     </div>
+    <div id="goods-bar">
+      💰 0&nbsp;&nbsp;🪵 0&nbsp;&nbsp;🪨 0&nbsp;&nbsp;⛏️ 0&nbsp;&nbsp;🔧 0&nbsp;&nbsp;🔩 0&nbsp;&nbsp;🔫 0
+    </div>
     <select id="country-select"></select>
     <button id="start-btn">Start Game</button>
     <button id="next-turn-btn" disabled>Next Turn</button>
@@ -237,6 +252,10 @@
           <span class="icon">🏭</span>
           <span class="label">Industry</span>
         </button>
+        <button class="tech-tab" data-tab="technologies">
+          <span class="icon">🛞</span>
+          <span class="label">Technologies</span>
+        </button>
       </div>
 
       <div id="tech-list"></div>
@@ -261,10 +280,11 @@
     <div class="panel" id="info-panel">
       <h2>Info</h2>
       <div style="font-size:11px;">
-        - Build economy to grow income.<br>
-        - Research techs to unlock buildings & units.<br>
-        - Recruit armies and conquer neighbors.<br>
-        - Medium-depth prototype inspired by Victoria-style games.
+        - Build economy to grow income and goods.<br>
+        - Buildings consume inputs and produce outputs each turn.<br>
+        - Switch production methods to use coal engines and steam tech.<br>
+        - Research techs to unlock methods and units.<br>
+        - Recruit armies and conquer neighbors.
       </div>
     </div>
   </div>
@@ -293,26 +313,180 @@ const MAX_TRIBAL_TILES = 7;
 const START_MONEY = 200;
 const RESEARCH_PER_TURN = 1;
 
-/* Buildings (locked/unlocked by tech) */
+/* GOODS (global stockpile) */
+let goods = {
+  wood: 0,
+  coal: 0,
+  iron: 0,
+  tools: 0,
+  steel: 0,
+  guns: 0
+};
+
+/* Buildings with production methods */
 const BUILDINGS = {
   infrastructure: [
-    { id: "tooling", name: "Tooling Workshop", cost: 30, income: 4, upkeep: 1, tech: "basic_industry" },
-    { id: "steel_mill", name: "Steel Mill", cost: 50, income: 7, upkeep: 2, tech: "steelworking" },
-    { id: "arms", name: "Arms Industry", cost: 60, income: 9, upkeep: 3, tech: "firearms" }
+    {
+      id: "tooling",
+      name: "Tooling Workshop",
+      cost: 30,
+      base: { income: 4, upkeep: 1 },
+      methods: {
+        hand_tools: {
+          label: "Hand Tools",
+          inputs: { wood: 1 },
+          outputs: { tools: 2 }
+        },
+        coal_engine: {
+          label: "Coal Engine",
+          tech: "coal_engine",
+          inputs: { wood: 1, coal: 1 },
+          outputs: { tools: 4 }
+        }
+      }
+    },
+    {
+      id: "steel_mill",
+      name: "Steel Mill",
+      cost: 50,
+      base: { income: 7, upkeep: 2 },
+      methods: {
+        bloomery: {
+          label: "Bloomery",
+          inputs: { iron: 2, wood: 1 },
+          outputs: { steel: 2 }
+        },
+        coal_furnace: {
+          label: "Coal Furnace",
+          tech: "coal_engine",
+          inputs: { iron: 2, coal: 2 },
+          outputs: { steel: 4 }
+        }
+      }
+    },
+    {
+      id: "arms",
+      name: "Arms Industry",
+      cost: 60,
+      base: { income: 9, upkeep: 3 },
+      methods: {
+        manual: {
+          label: "Manual",
+          inputs: { tools: 1, steel: 1, wood: 1 },
+          outputs: { guns: 2 }
+        },
+        mechanized: {
+          label: "Mechanized",
+          tech: "coal_engine",
+          inputs: { tools: 1, steel: 2, coal: 1 },
+          outputs: { guns: 4 }
+        }
+      }
+    }
   ],
   industry: [
-    { id: "coal_mine", name: "Coal Mine", cost: 25, income: 5, upkeep: 1, tech: "mining" },
-    { id: "iron_mine", name: "Iron Mine", cost: 30, income: 6, upkeep: 1, tech: "mining" },
-    { id: "logging", name: "Logging Camp", cost: 20, income: 4, upkeep: 1, tech: "logging" }
+    {
+      id: "coal_mine",
+      name: "Coal Mine",
+      cost: 25,
+      base: { income: 3, upkeep: 1 },
+      methods: {
+        hand_mining: {
+          label: "Hand Mining",
+          inputs: {},
+          outputs: { coal: 2 }
+        },
+        steam_pumps: {
+          label: "Steam Pumps",
+          tech: "steam_pumps",
+          inputs: { coal: 1 },
+          outputs: { coal: 4 }
+        }
+      }
+    },
+    {
+      id: "iron_mine",
+      name: "Iron Mine",
+      cost: 30,
+      base: { income: 3, upkeep: 1 },
+      methods: {
+        hand_mining: {
+          label: "Hand Mining",
+          inputs: {},
+          outputs: { iron: 2 }
+        },
+        steam_pumps: {
+          label: "Steam Pumps",
+          tech: "steam_pumps",
+          inputs: { coal: 1 },
+          outputs: { iron: 4 }
+        }
+      }
+    },
+    {
+      id: "logging",
+      name: "Logging Camp",
+      cost: 20,
+      base: { income: 3, upkeep: 1 },
+      methods: {
+        hand_logging: {
+          label: "Hand Logging",
+          inputs: {},
+          outputs: { wood: 3 }
+        },
+        steam_saws: {
+          label: "Steam Saws",
+          tech: "mechanized_workshops",
+          inputs: { coal: 1 },
+          outputs: { wood: 6 }
+        }
+      }
+    }
   ],
   farming: [
-    { id: "ranch", name: "Livestock Ranch", cost: 20, income: 3, upkeep: 1, tech: "agriculture" },
-    { id: "cotton", name: "Cotton Plantation", cost: 25, income: 4, upkeep: 1, tech: "plantations" },
-    { id: "rubber", name: "Rubber Plantation", cost: 35, income: 6, upkeep: 2, tech: "plantations" }
+    {
+      id: "ranch",
+      name: "Livestock Ranch",
+      cost: 20,
+      base: { income: 3, upkeep: 1 },
+      methods: {
+        traditional: {
+          label: "Traditional",
+          inputs: {},
+          outputs: {}
+        }
+      }
+    },
+    {
+      id: "cotton",
+      name: "Cotton Plantation",
+      cost: 25,
+      base: { income: 4, upkeep: 1 },
+      methods: {
+        traditional: {
+          label: "Traditional",
+          inputs: {},
+          outputs: {}
+        }
+      }
+    },
+    {
+      id: "rubber",
+      name: "Rubber Plantation",
+      cost: 35,
+      base: { income: 6, upkeep: 2 },
+      methods: {
+        traditional: {
+          label: "Traditional",
+          inputs: {},
+          outputs: {}
+        }
+      }
+    }
   ]
 };
 
-/* Tech tree (grouped into categories) */
+/* Tech tree */
 const TECHS = [
   // PRODUCTION
   { id: "basic_industry", name: "Basic Industry", cost: 5, prereq: [], category: "production", desc: "Unlocks Tooling Workshop." },
@@ -330,7 +504,12 @@ const TECHS = [
   { id: "logistics", name: "Logistics", cost: 8, prereq: ["military_drill"], category: "military", desc: "Reduces unit upkeep slightly." },
 
   // INDUSTRY / ADMIN
-  { id: "administration", name: "Administration", cost: 5, prereq: [], category: "industry", desc: "Small bonus to income." }
+  { id: "administration", name: "Administration", cost: 5, prereq: [], category: "industry", desc: "Small bonus to income." },
+
+  // TECHNOLOGIES
+  { id: "coal_engine", name: "Coal Engine", cost: 8, prereq: ["basic_industry"], category: "technologies", desc: "Unlocks coal-powered production methods." },
+  { id: "steam_pumps", name: "Steam Pumps", cost: 10, prereq: ["coal_engine"], category: "technologies", desc: "Increases mine output but uses coal." },
+  { id: "mechanized_workshops", name: "Mechanized Workshops", cost: 10, prereq: ["coal_engine"], category: "technologies", desc: "Improves logging and workshops using coal." }
 ];
 
 /* Military units */
@@ -357,11 +536,11 @@ let upkeep = 0;
 let researchPoints = 0;
 
 let unlockedTechs = new Set();
-let armies = []; // {id, type, tile, owner}
+let armies = [];
 let currentTechTab = "production";
 
 /* ===========================
-   DOM ELEMENTS
+   DOM
 =========================== */
 
 const mapEl = document.getElementById("map");
@@ -379,6 +558,7 @@ const statMoneyEl = document.getElementById("stat-money");
 const statIncomeEl = document.getElementById("stat-income");
 const statUpkeepEl = document.getElementById("stat-upkeep");
 const statResearchEl = document.getElementById("stat-research");
+const goodsBarEl = document.getElementById("goods-bar");
 
 const recruitInfantryBtn = document.getElementById("recruit-infantry-btn");
 const recruitCavalryBtn = document.getElementById("recruit-cavalry-btn");
@@ -414,8 +594,17 @@ function neighbors(tile) {
   return res;
 }
 
+function getBuildingDefById(id) {
+  for (const cat in BUILDINGS) {
+    for (const b of BUILDINGS[cat]) {
+      if (b.id === id) return b;
+    }
+  }
+  return null;
+}
+
 /* ===========================
-   MAP GENERATION (CONTIGUOUS + TRIBES)
+   MAP GENERATION
 =========================== */
 
 function generateEmptyMap() {
@@ -431,7 +620,7 @@ function generateEmptyMap() {
         y,
         owner: null,
         country: null,
-        buildings: [],
+        buildings: [], // {id, method}
         el: null
       };
       const div = document.createElement("div");
@@ -462,7 +651,6 @@ function generateCountries() {
     });
   }
 
-  // Multi-seed BFS for main countries
   const queue = [];
   const used = new Set();
 
@@ -513,21 +701,19 @@ function generateCountries() {
     }
   }
 
-  // Create tribal mini-countries on some neutral tiles
   createTribalCountries();
 
-  // Paint map: land (countries) vs water (no country)
   for (let y = 0; y < MAP_HEIGHT; y++) {
     for (let x = 0; x < MAP_WIDTH; x++) {
       const t = tiles[y][x];
       if (t.country) {
         if (t.country.tribal) {
-          t.el.style.background = "#8b5a2b"; // brown tribal land
+          t.el.style.background = "#8b5a2b"; // tribal brown
         } else {
-          t.el.style.background = "#4f8a4f"; // green land
+          t.el.style.background = "#4f8a4f"; // land green
         }
       } else {
-        t.el.style.background = "#3a5fcd"; // blue water
+        t.el.style.background = "#3a5fcd"; // water blue
       }
     }
   }
@@ -585,7 +771,7 @@ function createTribalCountries() {
 function populateCountrySelect() {
   countrySelectEl.innerHTML = "";
   countries.forEach(c => {
-    if (c.tribal) return; // don't allow starting as tribes
+    if (c.tribal) return;
     const count = c.tiles.length;
     if (count >= MIN_TILES_PER_COUNTRY) {
       const opt = document.createElement("option");
@@ -624,9 +810,11 @@ function startGame() {
   unlockedTechs = new Set();
   armies = [];
   selectedArmyId = null;
+  goods = { wood: 0, coal: 0, iron: 0, tools: 0, steel: 0, guns: 0 };
 
   recalcEconomy();
   updateStats();
+  updateGoodsBar();
   renderTechTree();
   renderArmyList();
 
@@ -676,13 +864,55 @@ function updateStatePanel() {
   if (t.buildings.length === 0) {
     html += "None<br>";
   } else {
-    t.buildings.forEach(b => {
-      html += `<div class="building-entry">• ${b.name}</div>`;
+    t.buildings.forEach((bInst, idx) => {
+      const def = getBuildingDefById(bInst.id);
+      const methodDef = def.methods[bInst.method];
+      html += `<div class="building-entry">• ${def.name}</div>`;
+      html += `<div class="building-method">Method: ${methodDef.label} <button data-bindex="${idx}" class="change-method-btn">Change</button></div>`;
     });
   }
 
   stateInfoEl.innerHTML = html;
+  attachMethodButtons();
   renderBuildMenu();
+}
+
+function attachMethodButtons() {
+  if (!selectedTile) return;
+  const buttons = stateInfoEl.querySelectorAll(".change-method-btn");
+  buttons.forEach(btn => {
+    btn.addEventListener("click", () => {
+      const idx = parseInt(btn.getAttribute("data-bindex"), 10);
+      changeBuildingMethod(selectedTile, idx);
+    });
+  });
+}
+
+function changeBuildingMethod(tile, index) {
+  const bInst = tile.buildings[index];
+  const def = getBuildingDefById(bInst.id);
+  if (!def) return;
+  const methodKeys = Object.keys(def.methods);
+  if (methodKeys.length <= 1) return;
+
+  let currentIdx = methodKeys.indexOf(bInst.method);
+  if (currentIdx === -1) currentIdx = 0;
+  let nextIdx = (currentIdx + 1) % methodKeys.length;
+
+  // find next method that is unlocked (or has no tech requirement)
+  for (let i = 0; i < methodKeys.length; i++) {
+    const key = methodKeys[nextIdx];
+    const m = def.methods[key];
+    if (!m.tech || unlockedTechs.has(m.tech)) {
+      bInst.method = key;
+      log(`Changed ${def.name} method to ${m.label} in state (${tile.x}, ${tile.y}).`);
+      updateStatePanel();
+      return;
+    }
+    nextIdx = (nextIdx + 1) % methodKeys.length;
+  }
+
+  log(`No unlocked alternative methods for ${def.name}.`);
 }
 
 function renderBuildMenu() {
@@ -696,7 +926,18 @@ function renderBuildMenu() {
     buildMenuEl.appendChild(title);
 
     BUILDINGS[category].forEach(b => {
-      if (!unlockedTechs.has(b.tech)) return;
+      // tech gate by building type
+      let requiredTech = null;
+      if (b.id === "tooling") requiredTech = "basic_industry";
+      if (b.id === "steel_mill") requiredTech = "steelworking";
+      if (b.id === "arms") requiredTech = "firearms";
+      if (b.id === "coal_mine" || b.id === "iron_mine") requiredTech = "mining";
+      if (b.id === "logging") requiredTech = "logging";
+      if (b.id === "ranch") requiredTech = "agriculture";
+      if (b.id === "cotton" || b.id === "rubber") requiredTech = "plantations";
+
+      if (requiredTech && !unlockedTechs.has(requiredTech)) return;
+
       const btn = document.createElement("button");
       btn.textContent = `${b.name} ($${b.cost})`;
       btn.onclick = () => buildBuilding(b);
@@ -705,21 +946,22 @@ function renderBuildMenu() {
   }
 }
 
-function buildBuilding(b) {
+function buildBuilding(bDef) {
   if (!selectedTile) return;
-  if (money < b.cost) {
-    log(`Not enough money to build ${b.name}.`);
+  if (money < bDef.cost) {
+    log(`Not enough money to build ${bDef.name}.`);
     return;
   }
 
-  money -= b.cost;
-  selectedTile.buildings.push(b);
+  money -= bDef.cost;
+  const defaultMethod = Object.keys(bDef.methods)[0];
+  selectedTile.buildings.push({ id: bDef.id, method: defaultMethod });
 
   recalcEconomy();
   updateStats();
   updateStatePanel();
 
-  log(`Built ${b.name} in state (${selectedTile.x}, ${selectedTile.y}).`);
+  log(`Built ${bDef.name} in state (${selectedTile.x}, ${selectedTile.y}).`);
 }
 
 function recalcEconomy() {
@@ -728,9 +970,11 @@ function recalcEconomy() {
   let upk = 0;
 
   playerCountry.tiles.forEach(t => {
-    t.buildings.forEach(b => {
-      inc += b.income;
-      upk += b.upkeep;
+    t.buildings.forEach(bInst => {
+      const def = getBuildingDefById(bInst.id);
+      if (!def) return;
+      inc += def.base.income;
+      upk += def.base.upkeep;
     });
   });
 
@@ -760,8 +1004,71 @@ function updateStats() {
   statResearchEl.textContent = researchPoints;
 }
 
+function updateGoodsBar() {
+  goodsBarEl.innerHTML =
+    `💰 ${money}&nbsp;&nbsp;` +
+    `🪵 ${goods.wood}&nbsp;&nbsp;` +
+    `🪨 ${goods.coal}&nbsp;&nbsp;` +
+    `⛏️ ${goods.iron}&nbsp;&nbsp;` +
+    `🔧 ${goods.tools}&nbsp;&nbsp;` +
+    `🔩 ${goods.steel}&nbsp;&nbsp;` +
+    `🔫 ${goods.guns}`;
+}
+
 /* ===========================
-   TECH TREE (TABS)
+   PRODUCTION (SUPPLY CHAINS)
+=========================== */
+
+function processProduction() {
+  if (!playerCountry) return;
+
+  // For partial production, we process each building independently
+  playerCountry.tiles.forEach(t => {
+    t.buildings.forEach(bInst => {
+      const def = getBuildingDefById(bInst.id);
+      if (!def) return;
+      const method = def.methods[bInst.method];
+      if (!method) return;
+
+      const inputs = method.inputs || {};
+      const outputs = method.outputs || {};
+
+      // compute ratio based on available inputs
+      let ratio = 1;
+      const inputKeys = Object.keys(inputs);
+      if (inputKeys.length > 0) {
+        ratio = Infinity;
+        inputKeys.forEach(k => {
+          const need = inputs[k];
+          if (need <= 0) return;
+          const have = goods[k] || 0;
+          const r = have / need;
+          if (r < ratio) ratio = r;
+        });
+        if (!isFinite(ratio)) ratio = 0;
+        ratio = Math.max(0, Math.min(1, ratio));
+      }
+
+      if (ratio <= 0) return;
+
+      // consume inputs
+      inputKeys.forEach(k => {
+        const need = inputs[k] * ratio;
+        goods[k] = (goods[k] || 0) - need;
+        if (goods[k] < 0) goods[k] = 0;
+      });
+
+      // produce outputs
+      Object.keys(outputs).forEach(k => {
+        const out = outputs[k] * ratio;
+        goods[k] = (goods[k] || 0) + out;
+      });
+    });
+  });
+}
+
+/* ===========================
+   TECH TREE
 =========================== */
 
 function renderTechTree() {
@@ -936,9 +1243,13 @@ function nextTurn() {
   if (!playerCountry) return;
   turn++;
   researchPoints += RESEARCH_PER_TURN;
+
+  processProduction(); // supply chains
   money += income - upkeep;
+
   recalcEconomy();
   updateStats();
+  updateGoodsBar();
   renderTechTree();
   log(`Turn ${turn}: Net ${income - upkeep >= 0 ? "+" : ""}${income - upkeep}.`);
 }
@@ -968,6 +1279,7 @@ function init() {
 
   renderTechTree();
   updateRecruitButtons();
+  updateGoodsBar();
 }
 
 init();
