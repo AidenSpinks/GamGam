@@ -53,10 +53,17 @@
     justify-content: center;
     color: #eee;
     user-select: none;
+    transition: box-shadow 0.15s, border-color 0.15s;
   }
-  .tile.selected { outline: 2px solid #fff; }
-  .tile.player { border: 2px solid #ffd700; }
-  .tile.enemy { border: 2px solid #ff5555; }
+
+  /* PLAYER & ENEMY BORDERS */
+  .tile.player {
+    border: 3px solid #ffd700;
+    box-shadow: 0 0 6px rgba(255, 215, 0, 0.7);
+  }
+  .tile.enemy {
+    border: 2px solid #ff5555;
+  }
 
   #top-panel {
     margin-bottom: 8px;
@@ -156,7 +163,7 @@
     margin-bottom: 2px;
   }
 
-  /* TECH TABS (Option 3: big icon buttons) */
+  /* TECH TABS (big icon buttons) */
   #tech-tabs {
     display: flex;
     gap: 4px;
@@ -278,6 +285,10 @@ const MAP_HEIGHT = 12;
 const NUM_COUNTRIES = 8;
 const MIN_TILES_PER_COUNTRY = 8;
 const MAX_TILES_PER_COUNTRY = 18;
+
+const TRIBAL_GROUPS = 3;
+const MIN_TRIBAL_TILES = 3;
+const MAX_TRIBAL_TILES = 7;
 
 const START_MONEY = 200;
 const RESEARCH_PER_TURN = 1;
@@ -404,7 +415,7 @@ function neighbors(tile) {
 }
 
 /* ===========================
-   MAP GENERATION (CONTIGUOUS)
+   MAP GENERATION (CONTIGUOUS + TRIBES)
 =========================== */
 
 function generateEmptyMap() {
@@ -446,22 +457,26 @@ function generateCountries() {
       id: i,
       name: `Country ${i + 1}`,
       color: colors[i % colors.length],
-      tiles: []
+      tiles: [],
+      tribal: false
     });
   }
 
-  // Multi-seed BFS
+  // Multi-seed BFS for main countries
   const queue = [];
   const used = new Set();
 
-  // Seed positions
   countries.forEach(c => {
     let x, y, key;
+    let tries = 0;
     do {
       x = randInt(0, MAP_WIDTH - 1);
       y = randInt(0, MAP_HEIGHT - 1);
       key = `${x},${y}`;
+      tries++;
+      if (tries > 200) break;
     } while (used.has(key));
+    if (used.has(key)) return;
     used.add(key);
     const t = tiles[y][x];
     t.country = c;
@@ -469,7 +484,6 @@ function generateCountries() {
     queue.push({ tile: t, country: c });
   });
 
-  // Flood fill
   while (queue.length > 0) {
     const { tile, country } = queue.shift();
     for (const n of neighbors(tile)) {
@@ -481,14 +495,12 @@ function generateCountries() {
     }
   }
 
-  // Trim to reasonable sizes
   countries.forEach(c => {
     if (c.tiles.length > MAX_TILES_PER_COUNTRY) {
       c.tiles = c.tiles.slice(0, MAX_TILES_PER_COUNTRY);
     }
   });
 
-  // Mark tiles not in trimmed lists as neutral
   const inCountrySet = new Set();
   countries.forEach(c => c.tiles.forEach(t => inCountrySet.add(t)));
 
@@ -501,14 +513,21 @@ function generateCountries() {
     }
   }
 
-  // Paint map
+  // Create tribal mini-countries on some neutral tiles
+  createTribalCountries();
+
+  // Paint map: land (countries) vs water (no country)
   for (let y = 0; y < MAP_HEIGHT; y++) {
     for (let x = 0; x < MAP_WIDTH; x++) {
       const t = tiles[y][x];
       if (t.country) {
-        t.el.style.background = t.country.color;
+        if (t.country.tribal) {
+          t.el.style.background = "#8b5a2b"; // brown tribal land
+        } else {
+          t.el.style.background = "#4f8a4f"; // green land
+        }
       } else {
-        t.el.style.background = "#111";
+        t.el.style.background = "#3a5fcd"; // blue water
       }
     }
   }
@@ -516,9 +535,57 @@ function generateCountries() {
   populateCountrySelect();
 }
 
+function createTribalCountries() {
+  let nextId = countries.length;
+  const neutralTiles = [];
+  for (let y = 0; y < MAP_HEIGHT; y++) {
+    for (let x = 0; x < MAP_WIDTH; x++) {
+      const t = tiles[y][x];
+      if (!t.country) neutralTiles.push(t);
+    }
+  }
+  if (neutralTiles.length === 0) return;
+
+  for (let g = 0; g < TRIBAL_GROUPS; g++) {
+    if (neutralTiles.length === 0) break;
+
+    const idx = randInt(0, neutralTiles.length - 1);
+    const seed = neutralTiles.splice(idx, 1)[0];
+
+    const tribe = {
+      id: nextId++,
+      name: `Tribe ${g + 1}`,
+      color: "#8b5a2b",
+      tiles: [],
+      tribal: true
+    };
+    countries.push(tribe);
+
+    const targetSize = randInt(MIN_TRIBAL_TILES, MAX_TRIBAL_TILES);
+    const q = [seed];
+    seed.country = tribe;
+    tribe.tiles.push(seed);
+
+    while (q.length > 0 && tribe.tiles.length < targetSize) {
+      const cur = q.shift();
+      for (const n of neighbors(cur)) {
+        if (!n.country) {
+          n.country = tribe;
+          tribe.tiles.push(n);
+          q.push(n);
+          const idx2 = neutralTiles.indexOf(n);
+          if (idx2 >= 0) neutralTiles.splice(idx2, 1);
+          if (tribe.tiles.length >= targetSize) break;
+        }
+      }
+    }
+  }
+}
+
 function populateCountrySelect() {
   countrySelectEl.innerHTML = "";
   countries.forEach(c => {
+    if (c.tribal) return; // don't allow starting as tribes
     const count = c.tiles.length;
     if (count >= MIN_TILES_PER_COUNTRY) {
       const opt = document.createElement("option");
@@ -543,7 +610,6 @@ function startGame() {
     t.el.classList.add("player");
   });
 
-  // Mark others as enemy
   countries.forEach(c => {
     if (c !== playerCountry) {
       c.tiles.forEach(t => {
@@ -574,7 +640,6 @@ function startGame() {
 function onTileClick(tile) {
   if (!playerCountry) return;
 
-  // If an army is selected, try to move/attack
   if (selectedArmyId !== null) {
     const army = armies.find(a => a.id === selectedArmyId);
     if (army && isAdjacent(army.tile, tile)) {
@@ -583,7 +648,6 @@ function onTileClick(tile) {
     }
   }
 
-  // Otherwise, select state
   if (tile.owner !== "player") {
     stateInfoEl.textContent = "This is not your state.";
     selectedTile = null;
@@ -670,7 +734,6 @@ function recalcEconomy() {
     });
   });
 
-  // Unit upkeep
   armies.forEach(a => {
     const ut = UNIT_TYPES[a.type];
     if (!ut) return;
@@ -681,7 +744,6 @@ function recalcEconomy() {
     upk += unitUpkeep;
   });
 
-  // Admin tech bonus
   if (unlockedTechs.has("administration")) {
     inc = Math.round(inc * 1.1);
   }
@@ -705,7 +767,6 @@ function updateStats() {
 function renderTechTree() {
   techListEl.innerHTML = "";
 
-  // highlight active tab
   document.querySelectorAll(".tech-tab").forEach(btn => {
     btn.classList.toggle("active", btn.dataset.tab === currentTechTab);
   });
@@ -820,7 +881,6 @@ function moveArmy(army, targetTile) {
     army.tile = targetTile;
     log(`Army #${army.id} moved to (${targetTile.x}, ${targetTile.y}).`);
   } else if (targetTile.owner === null || targetTile.owner === undefined) {
-    // Neutral tile
     army.tile = targetTile;
     targetTile.owner = "player";
     targetTile.el.classList.add("player");
@@ -830,7 +890,6 @@ function moveArmy(army, targetTile) {
     }
     log(`Army #${army.id} occupied neutral tile (${targetTile.x}, ${targetTile.y}).`);
   } else {
-    // Enemy tile: combat
     resolveCombat(army, targetTile);
   }
   recalcEconomy();
@@ -841,7 +900,7 @@ function moveArmy(army, targetTile) {
 function resolveCombat(army, tile) {
   const ut = UNIT_TYPES[army.type];
   let attack = ut.attack;
-  let defense = 3; // generic defender strength
+  let defense = 3;
 
   if (unlockedTechs.has("military_drill") && army.type === "infantry") {
     attack += 2;
@@ -854,7 +913,6 @@ function resolveCombat(army, tile) {
   const totalD = defense + rollD;
 
   if (totalA >= totalD) {
-    // Win
     log(`Army #${army.id} won battle at (${tile.x}, ${tile.y}) [${totalA} vs ${totalD}].`);
     tile.owner = "player";
     tile.el.classList.add("player");
@@ -864,7 +922,6 @@ function resolveCombat(army, tile) {
       playerCountry.tiles.push(tile);
     }
   } else {
-    // Lose
     log(`Army #${army.id} lost battle at (${tile.x}, ${tile.y}) [${totalA} vs ${totalD}] and was destroyed.`);
     armies = armies.filter(a => a.id !== army.id);
     selectedArmyId = null;
@@ -902,7 +959,6 @@ function init() {
   recruitCavalryBtn.addEventListener("click", () => recruitUnit("cavalry"));
   recruitArtilleryBtn.addEventListener("click", () => recruitUnit("artillery"));
 
-  // Tech tab click handlers
   document.querySelectorAll(".tech-tab").forEach(btn => {
     btn.addEventListener("click", () => {
       currentTechTab = btn.dataset.tab;
