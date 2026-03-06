@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>Mini Grand Strategy – Supply Chains & Tech</title>
+<title>Mini Grand Strategy – Vic3 Armies & Supply Chains</title>
 <style>
   body {
     margin: 0;
@@ -174,6 +174,7 @@
   .army-entry {
     font-size: 11px;
     margin-bottom: 2px;
+    cursor: pointer;
   }
 
   #tech-tabs {
@@ -267,13 +268,17 @@
         <div><strong>Armies:</strong></div>
         <div id="army-list"></div>
         <hr>
-        <div><strong>Recruit in selected state:</strong></div>
-        <button id="recruit-infantry-btn" disabled>Infantry</button>
-        <button id="recruit-cavalry-btn" disabled>Cavalry</button>
-        <button id="recruit-artillery-btn" disabled>Artillery</button>
-        <hr>
-        <div><strong>Move selected army:</strong></div>
-        <div style="font-size:10px;">Click an adjacent tile to move/attack.</div>
+        <div id="army-actions">
+          <div><strong>Selected Army:</strong> <span id="selected-army-label">None</span></div>
+          <div style="font-size:10px;">Click an army, then click adjacent tiles to move/attack.</div>
+          <hr>
+          <div><strong>Army Management (on selected state):</strong></div>
+          <button id="create-army-btn" disabled>Create Army Here</button>
+          <button id="add-infantry-btn" disabled>Add Infantry</button>
+          <button id="add-cavalry-btn" disabled>Add Cavalry</button>
+          <button id="add-artillery-btn" disabled>Add Artillery</button>
+          <button id="add-conscript-btn" disabled>Add Conscript Infantry</button>
+        </div>
       </div>
     </div>
 
@@ -283,8 +288,9 @@
         - Build economy to grow income and goods.<br>
         - Buildings consume inputs and produce outputs each turn.<br>
         - Switch production methods to use coal engines and steam tech.<br>
-        - Research techs to unlock methods and units.<br>
-        - Recruit armies and conquer neighbors.
+        - Create armies and add battalions instead of single units.<br>
+        - Conscripts unlock with Firearms and cost no money.<br>
+        - AI countries (including tribes) raise armies and react to attacks.
       </div>
     </div>
   </div>
@@ -497,7 +503,7 @@ const TECHS = [
   { id: "plantations", name: "Plantations", cost: 7, prereq: ["agriculture"], category: "production", desc: "Unlocks Cotton & Rubber Plantations." },
 
   // MILITARY
-  { id: "firearms", name: "Firearms", cost: 8, prereq: ["basic_industry"], category: "military", desc: "Unlocks Arms Industry & Infantry." },
+  { id: "firearms", name: "Firearms", cost: 8, prereq: ["basic_industry"], category: "military", desc: "Unlocks Arms Industry, Infantry & Conscripts." },
   { id: "military_drill", name: "Military Drill", cost: 6, prereq: ["firearms"], category: "military", desc: "Improves infantry effectiveness." },
   { id: "cavalry_tactics", name: "Cavalry Tactics", cost: 7, prereq: ["military_drill"], category: "military", desc: "Unlocks Cavalry." },
   { id: "artillery", name: "Artillery", cost: 9, prereq: ["firearms"], category: "military", desc: "Unlocks Artillery." },
@@ -512,11 +518,12 @@ const TECHS = [
   { id: "mechanized_workshops", name: "Mechanized Workshops", cost: 10, prereq: ["coal_engine"], category: "technologies", desc: "Improves logging and workshops using coal." }
 ];
 
-/* Military units */
+/* Military units (battalion types) */
 const UNIT_TYPES = {
   infantry: { name: "Infantry", cost: 40, upkeep: 3, attack: 5, defense: 4, tech: "firearms" },
   cavalry: { name: "Cavalry", cost: 60, upkeep: 4, attack: 7, defense: 3, tech: "cavalry_tactics" },
-  artillery: { name: "Artillery", cost: 80, upkeep: 5, attack: 9, defense: 2, tech: "artillery" }
+  artillery: { name: "Artillery", cost: 80, upkeep: 5, attack: 9, defense: 2, tech: "artillery" },
+  conscript_infantry: { name: "Conscript Infantry", cost: 0, upkeep: 4, attack: 3, defense: 3, tech: "firearms", conscript: true }
 };
 
 /* ===========================
@@ -527,7 +534,6 @@ let tiles = [];
 let countries = [];
 let playerCountry = null;
 let selectedTile = null;
-let selectedArmyId = null;
 
 let turn = 0;
 let money = START_MONEY;
@@ -536,7 +542,11 @@ let upkeep = 0;
 let researchPoints = 0;
 
 let unlockedTechs = new Set();
+
+/* armies: {id, name, tile, ownerCountryId, units:[{type,count}]} */
 let armies = [];
+let selectedArmyId = null;
+
 let currentTechTab = "production";
 
 /* ===========================
@@ -560,9 +570,12 @@ const statUpkeepEl = document.getElementById("stat-upkeep");
 const statResearchEl = document.getElementById("stat-research");
 const goodsBarEl = document.getElementById("goods-bar");
 
-const recruitInfantryBtn = document.getElementById("recruit-infantry-btn");
-const recruitCavalryBtn = document.getElementById("recruit-cavalry-btn");
-const recruitArtilleryBtn = document.getElementById("recruit-artillery-btn");
+const createArmyBtn = document.getElementById("create-army-btn");
+const addInfantryBtn = document.getElementById("add-infantry-btn");
+const addCavalryBtn = document.getElementById("add-cavalry-btn");
+const addArtilleryBtn = document.getElementById("add-artillery-btn");
+const addConscriptBtn = document.getElementById("add-conscript-btn");
+const selectedArmyLabelEl = document.getElementById("selected-army-label");
 
 /* ===========================
    UTIL
@@ -603,6 +616,14 @@ function getBuildingDefById(id) {
   return null;
 }
 
+function isAdjacent(a, b) {
+  return (Math.abs(a.x - b.x) + Math.abs(a.y - b.y)) === 1;
+}
+
+function getCountryById(id) {
+  return countries.find(c => c.id === id);
+}
+
 /* ===========================
    MAP GENERATION
 =========================== */
@@ -620,7 +641,7 @@ function generateEmptyMap() {
         y,
         owner: null,
         country: null,
-        buildings: [], // {id, method}
+        buildings: [],
         el: null
       };
       const div = document.createElement("div");
@@ -647,7 +668,8 @@ function generateCountries() {
       name: `Country ${i + 1}`,
       color: colors[i % colors.length],
       tiles: [],
-      tribal: false
+      tribal: false,
+      hqTile: null
     });
   }
 
@@ -669,6 +691,7 @@ function generateCountries() {
     const t = tiles[y][x];
     t.country = c;
     c.tiles.push(t);
+    c.hqTile = t;
     queue.push({ tile: t, country: c });
   });
 
@@ -708,12 +731,12 @@ function generateCountries() {
       const t = tiles[y][x];
       if (t.country) {
         if (t.country.tribal) {
-          t.el.style.background = "#8b5a2b"; // tribal brown
+          t.el.style.background = "#8b5a2b";
         } else {
-          t.el.style.background = "#4f8a4f"; // land green
+          t.el.style.background = "#4f8a4f";
         }
       } else {
-        t.el.style.background = "#3a5fcd"; // water blue
+        t.el.style.background = "#3a5fcd";
       }
     }
   }
@@ -743,7 +766,8 @@ function createTribalCountries() {
       name: `Tribe ${g + 1}`,
       color: "#8b5a2b",
       tiles: [],
-      tribal: true
+      tribal: true,
+      hqTile: seed
     };
     countries.push(tribe);
 
@@ -817,10 +841,13 @@ function startGame() {
   updateGoodsBar();
   renderTechTree();
   renderArmyList();
+  updateArmyButtons();
 
   startBtn.disabled = true;
   countrySelectEl.disabled = true;
   nextTurnBtn.disabled = false;
+
+  initAIMilitaries();
 
   log(`You now control ${playerCountry.name}.`);
 }
@@ -828,6 +855,7 @@ function startGame() {
 function onTileClick(tile) {
   if (!playerCountry) return;
 
+  const armyHere = armies.find(a => a.tile === tile && a.ownerCountryId === playerCountry.id);
   if (selectedArmyId !== null) {
     const army = armies.find(a => a.id === selectedArmyId);
     if (army && isAdjacent(army.tile, tile)) {
@@ -837,19 +865,16 @@ function onTileClick(tile) {
   }
 
   if (tile.owner !== "player") {
-    stateInfoEl.textContent = "This is not your state.";
     selectedTile = null;
+    stateInfoEl.textContent = "This is not your state.";
     buildMenuEl.innerHTML = "";
-    updateRecruitButtons();
+    updateArmyButtons();
     return;
   }
+
   selectedTile = tile;
   updateStatePanel();
-  updateRecruitButtons();
-}
-
-function isAdjacent(a, b) {
-  return (Math.abs(a.x - b.x) + Math.abs(a.y - b.y)) === 1;
+  updateArmyButtons();
 }
 
 function updateStatePanel() {
@@ -899,7 +924,6 @@ function changeBuildingMethod(tile, index) {
   if (currentIdx === -1) currentIdx = 0;
   let nextIdx = (currentIdx + 1) % methodKeys.length;
 
-  // find next method that is unlocked (or has no tech requirement)
   for (let i = 0; i < methodKeys.length; i++) {
     const key = methodKeys[nextIdx];
     const m = def.methods[key];
@@ -926,7 +950,6 @@ function renderBuildMenu() {
     buildMenuEl.appendChild(title);
 
     BUILDINGS[category].forEach(b => {
-      // tech gate by building type
       let requiredTech = null;
       if (b.id === "tooling") requiredTech = "basic_industry";
       if (b.id === "steel_mill") requiredTech = "steelworking";
@@ -979,13 +1002,17 @@ function recalcEconomy() {
   });
 
   armies.forEach(a => {
-    const ut = UNIT_TYPES[a.type];
-    if (!ut) return;
-    let unitUpkeep = ut.upkeep;
-    if (unlockedTechs.has("logistics")) {
-      unitUpkeep = Math.max(1, unitUpkeep - 1);
-    }
-    upk += unitUpkeep;
+    const owner = getCountryById(a.ownerCountryId);
+    if (!owner || owner.id !== playerCountry.id) return;
+    a.units.forEach(u => {
+      const ut = UNIT_TYPES[u.type];
+      if (!ut) return;
+      let unitUpkeep = ut.upkeep * u.count;
+      if (unlockedTechs.has("logistics")) {
+        unitUpkeep = Math.max(1, unitUpkeep - u.count);
+      }
+      upk += unitUpkeep;
+    });
   });
 
   if (unlockedTechs.has("administration")) {
@@ -998,21 +1025,21 @@ function recalcEconomy() {
 
 function updateStats() {
   statTurnEl.textContent = turn;
-  statMoneyEl.textContent = money;
-  statIncomeEl.textContent = income;
-  statUpkeepEl.textContent = upkeep;
+  statMoneyEl.textContent = Math.round(money);
+  statIncomeEl.textContent = Math.round(income);
+  statUpkeepEl.textContent = Math.round(upkeep);
   statResearchEl.textContent = researchPoints;
 }
 
 function updateGoodsBar() {
   goodsBarEl.innerHTML =
-    `💰 ${money}&nbsp;&nbsp;` +
-    `🪵 ${goods.wood}&nbsp;&nbsp;` +
-    `🪨 ${goods.coal}&nbsp;&nbsp;` +
-    `⛏️ ${goods.iron}&nbsp;&nbsp;` +
-    `🔧 ${goods.tools}&nbsp;&nbsp;` +
-    `🔩 ${goods.steel}&nbsp;&nbsp;` +
-    `🔫 ${goods.guns}`;
+    `💰 ${Math.round(money)}&nbsp;&nbsp;` +
+    `🪵 ${Math.round(goods.wood)}&nbsp;&nbsp;` +
+    `🪨 ${Math.round(goods.coal)}&nbsp;&nbsp;` +
+    `⛏️ ${Math.round(goods.iron)}&nbsp;&nbsp;` +
+    `🔧 ${Math.round(goods.tools)}&nbsp;&nbsp;` +
+    `🔩 ${Math.round(goods.steel)}&nbsp;&nbsp;` +
+    `🔫 ${Math.round(goods.guns)}`;
 }
 
 /* ===========================
@@ -1022,7 +1049,6 @@ function updateGoodsBar() {
 function processProduction() {
   if (!playerCountry) return;
 
-  // For partial production, we process each building independently
   playerCountry.tiles.forEach(t => {
     t.buildings.forEach(bInst => {
       const def = getBuildingDefById(bInst.id);
@@ -1033,7 +1059,6 @@ function processProduction() {
       const inputs = method.inputs || {};
       const outputs = method.outputs || {};
 
-      // compute ratio based on available inputs
       let ratio = 1;
       const inputKeys = Object.keys(inputs);
       if (inputKeys.length > 0) {
@@ -1051,14 +1076,12 @@ function processProduction() {
 
       if (ratio <= 0) return;
 
-      // consume inputs
       inputKeys.forEach(k => {
         const need = inputs[k] * ratio;
         goods[k] = (goods[k] || 0) - need;
         if (goods[k] < 0) goods[k] = 0;
       });
 
-      // produce outputs
       Object.keys(outputs).forEach(k => {
         const out = outputs[k] * ratio;
         goods[k] = (goods[k] || 0) + out;
@@ -1125,114 +1148,252 @@ function researchTech(tech) {
   updateStats();
   renderTechTree();
   updateStatePanel();
-  updateRecruitButtons();
+  updateArmyButtons();
 }
 
 /* ===========================
-   MILITARY
+   ARMIES (VIC3 STYLE)
 =========================== */
 
-function updateRecruitButtons() {
-  const canRecruitHere = !!selectedTile && selectedTile.owner === "player";
-  recruitInfantryBtn.disabled = !canRecruitHere || !unlockedTechs.has(UNIT_TYPES.infantry.tech);
-  recruitCavalryBtn.disabled = !canRecruitHere || !unlockedTechs.has(UNIT_TYPES.cavalry.tech);
-  recruitArtilleryBtn.disabled = !canRecruitHere || !unlockedTechs.has(UNIT_TYPES.artillery.tech);
+function nextArmyId() {
+  return armies.length ? Math.max(...armies.map(a => a.id)) + 1 : 1;
 }
 
-function recruitUnit(typeId) {
-  if (!selectedTile) return;
-  const ut = UNIT_TYPES[typeId];
-  if (!ut) return;
-  if (!unlockedTechs.has(ut.tech)) {
-    log(`You need ${TECHS.find(t => t.id === ut.tech).name} to recruit ${ut.name}.`);
-    return;
-  }
-  if (money < ut.cost) {
-    log(`Not enough money to recruit ${ut.name}.`);
-    return;
-  }
-  money -= ut.cost;
-  const id = armies.length ? Math.max(...armies.map(a => a.id)) + 1 : 1;
-  armies.push({
+function createArmyAtTile(tile, ownerCountryId) {
+  const id = nextArmyId();
+  const owner = getCountryById(ownerCountryId);
+  const name = `${id} ${owner ? owner.name : "Army"}`;
+  const army = {
     id,
-    type: typeId,
-    tile: selectedTile,
-    owner: "player"
-  });
-  log(`Recruited ${ut.name} in state (${selectedTile.x}, ${selectedTile.y}).`);
-  recalcEconomy();
-  updateStats();
+    name,
+    tile,
+    ownerCountryId,
+    units: []
+  };
+  armies.push(army);
+  log(`Created ${name} at (${tile.x}, ${tile.y}).`);
   renderArmyList();
+  updateArmyButtons();
+  return army;
+}
+
+function getArmiesAtTile(tile, ownerCountryId = null) {
+  return armies.filter(a => a.tile === tile && (ownerCountryId === null || a.ownerCountryId === ownerCountryId));
 }
 
 function renderArmyList() {
   armyListEl.innerHTML = "";
   armies.forEach(a => {
-    const ut = UNIT_TYPES[a.type];
+    const owner = getCountryById(a.ownerCountryId);
     const div = document.createElement("div");
     div.className = "army-entry";
-    div.textContent = `#${a.id} ${ut.name} @ (${a.tile.x}, ${a.tile.y})`;
+    const summary = a.units.map(u => `${u.count} ${UNIT_TYPES[u.type].name}`).join(", ") || "No units";
+    div.textContent = `#${a.id} ${a.name} @ (${a.tile.x}, ${a.tile.y}) [${summary}]`;
     if (a.id === selectedArmyId) {
       div.style.color = "#ffd700";
     }
     div.onclick = () => {
       selectedArmyId = a.id;
+      selectedArmyLabelEl.textContent = `#${a.id} ${a.name}`;
       renderArmyList();
+      updateArmyButtons();
     };
     armyListEl.appendChild(div);
   });
 }
 
-function moveArmy(army, targetTile) {
-  if (targetTile.owner === "player") {
-    army.tile = targetTile;
-    log(`Army #${army.id} moved to (${targetTile.x}, ${targetTile.y}).`);
-  } else if (targetTile.owner === null || targetTile.owner === undefined) {
-    army.tile = targetTile;
-    targetTile.owner = "player";
-    targetTile.el.classList.add("player");
-    targetTile.el.classList.remove("enemy");
-    if (targetTile.country && targetTile.country !== playerCountry) {
-      playerCountry.tiles.push(targetTile);
-    }
-    log(`Army #${army.id} occupied neutral tile (${targetTile.x}, ${targetTile.y}).`);
-  } else {
-    resolveCombat(army, targetTile);
+function addBattalionToArmy(army, typeId, isPlayer) {
+  const ut = UNIT_TYPES[typeId];
+  if (!ut) return;
+  if (!unlockedTechs.has(ut.tech) && isPlayer) {
+    log(`You need ${TECHS.find(t => t.id === ut.tech).name} to add ${ut.name}.`);
+    return;
   }
+  if (!ut.conscript && isPlayer && money < ut.cost) {
+    log(`Not enough money to add ${ut.name}.`);
+    return;
+  }
+  if (!ut.conscript && isPlayer) {
+    money -= ut.cost;
+  }
+  let entry = army.units.find(u => u.type === typeId);
+  if (!entry) {
+    entry = { type: typeId, count: 0 };
+    army.units.push(entry);
+  }
+  entry.count += 1;
+  log(`${isPlayer ? "Added" : "Raised"} ${ut.name} in ${army.name}.`);
   recalcEconomy();
   updateStats();
+  updateGoodsBar();
   renderArmyList();
 }
 
-function resolveCombat(army, tile) {
-  const ut = UNIT_TYPES[army.type];
-  let attack = ut.attack;
-  let defense = 3;
+function updateArmyButtons() {
+  const canCreateArmy = !!selectedTile && selectedTile.owner === "player" && getArmiesAtTile(selectedTile, playerCountry.id).length === 0;
+  createArmyBtn.disabled = !canCreateArmy;
 
-  if (unlockedTechs.has("military_drill") && army.type === "infantry") {
-    attack += 2;
+  const selectedArmy = armies.find(a => a.id === selectedArmyId && a.ownerCountryId === playerCountry?.id);
+  const canAdd = !!selectedArmy && selectedTile && selectedArmy.tile === selectedTile;
+
+  addInfantryBtn.disabled = !canAdd || !unlockedTechs.has(UNIT_TYPES.infantry.tech);
+  addCavalryBtn.disabled = !canAdd || !unlockedTechs.has(UNIT_TYPES.cavalry.tech);
+  addArtilleryBtn.disabled = !canAdd || !unlockedTechs.has(UNIT_TYPES.artillery.tech);
+  addConscriptBtn.disabled = !canAdd || !unlockedTechs.has(UNIT_TYPES.conscript_infantry.tech);
+
+  if (!selectedArmy) {
+    selectedArmyLabelEl.textContent = "None";
   }
+}
+
+/* ===========================
+   COMBAT
+=========================== */
+
+function armyPower(army) {
+  let attack = 0;
+  let defense = 0;
+  army.units.forEach(u => {
+    const ut = UNIT_TYPES[u.type];
+    if (!ut) return;
+    attack += ut.attack * u.count;
+    defense += ut.defense * u.count;
+  });
+  return { attack, defense };
+}
+
+function applyCasualties(army, lossFactor) {
+  army.units.forEach(u => {
+    const lost = Math.max(0, Math.round(u.count * lossFactor));
+    u.count -= lost;
+    if (u.count < 0) u.count = 0;
+  });
+  army.units = army.units.filter(u => u.count > 0);
+}
+
+function resolveBattle(attacker, defender, tile) {
+  const atk = armyPower(attacker);
+  const def = armyPower(defender);
 
   const rollA = randInt(0, 3);
   const rollD = randInt(0, 3);
 
-  const totalA = attack + rollA;
-  const totalD = defense + rollD;
+  const totalA = atk.attack + rollA;
+  const totalD = def.defense + rollD;
 
   if (totalA >= totalD) {
-    log(`Army #${army.id} won battle at (${tile.x}, ${tile.y}) [${totalA} vs ${totalD}].`);
-    tile.owner = "player";
-    tile.el.classList.add("player");
-    tile.el.classList.remove("enemy");
-    army.tile = tile;
-    if (tile.country && tile.country !== playerCountry) {
-      playerCountry.tiles.push(tile);
+    log(`${attacker.name} won battle at (${tile.x}, ${tile.y}) [${totalA} vs ${totalD}].`);
+    applyCasualties(attacker, 0.3);
+    applyCasualties(defender, 0.7);
+    if (defender.units.length === 0) {
+      armies = armies.filter(a => a !== defender);
+      tile.owner = "player";
+      tile.el.classList.add("player");
+      tile.el.classList.remove("enemy");
+      attacker.tile = tile;
+      if (tile.country && tile.country !== playerCountry) {
+        playerCountry.tiles.push(tile);
+      }
     }
   } else {
-    log(`Army #${army.id} lost battle at (${tile.x}, ${tile.y}) [${totalA} vs ${totalD}] and was destroyed.`);
-    armies = armies.filter(a => a.id !== army.id);
-    selectedArmyId = null;
+    log(`${attacker.name} lost battle at (${tile.x}, ${tile.y}) [${totalA} vs ${totalD}].`);
+    applyCasualties(attacker, 0.7);
+    applyCasualties(defender, 0.3);
+    if (attacker.units.length === 0) {
+      armies = armies.filter(a => a !== attacker);
+      if (attacker.ownerCountryId === playerCountry.id) {
+        selectedArmyId = null;
+      }
+    }
   }
+}
+
+/* ===========================
+   MOVEMENT
+=========================== */
+
+function moveArmy(army, targetTile) {
+  const owner = getCountryById(army.ownerCountryId);
+  const isPlayerArmy = owner && owner.id === playerCountry.id;
+
+  const enemyArmies = armies.filter(a => a.tile === targetTile && a.ownerCountryId !== army.ownerCountryId);
+  const enemyOwner = targetTile.owner && targetTile.owner !== "player" ? "enemy" : null;
+
+  if (enemyArmies.length > 0) {
+    const defender = enemyArmies[0];
+    resolveBattle(army, defender, targetTile);
+  } else if (targetTile.owner === "player" || targetTile.owner === null || targetTile.owner === undefined) {
+    army.tile = targetTile;
+    if (targetTile.owner === null || targetTile.owner === undefined) {
+      targetTile.owner = isPlayerArmy ? "player" : "ai";
+      if (isPlayerArmy) {
+        targetTile.el.classList.add("player");
+        targetTile.el.classList.remove("enemy");
+        if (targetTile.country && targetTile.country !== playerCountry) {
+          playerCountry.tiles.push(targetTile);
+        }
+      }
+    }
+    log(`${army.name} moved to (${targetTile.x}, ${targetTile.y}).`);
+  } else if (enemyOwner && isPlayerArmy) {
+    const defendingArmies = armies.filter(a => a.tile === targetTile && a.ownerCountryId !== playerCountry.id);
+    if (defendingArmies.length > 0) {
+      resolveBattle(army, defendingArmies[0], targetTile);
+    } else {
+      army.tile = targetTile;
+      targetTile.owner = "player";
+      targetTile.el.classList.add("player");
+      targetTile.el.classList.remove("enemy");
+      if (targetTile.country && targetTile.country !== playerCountry) {
+        playerCountry.tiles.push(targetTile);
+      }
+      log(`${army.name} captured (${targetTile.x}, ${targetTile.y}).`);
+    }
+  }
+
+  recalcEconomy();
+  updateStats();
+  updateGoodsBar();
+  renderArmyList();
+}
+
+/* ===========================
+   AI MILITARIES
+=========================== */
+
+function initAIMilitaries() {
+  countries.forEach(c => {
+    if (!playerCountry || c.id === playerCountry.id) return;
+    if (!c.tiles || c.tiles.length === 0) return;
+    const hq = c.hqTile || c.tiles[0];
+    const army = createArmyAtTile(hq, c.id);
+    const baseInf = c.tribal ? 1 : 2;
+    for (let i = 0; i < baseInf; i++) {
+      army.units.push({ type: "infantry", count: 1 });
+    }
+  });
+  renderArmyList();
+}
+
+function aiTurn() {
+  armies.forEach(army => {
+    const owner = getCountryById(army.ownerCountryId);
+    if (!owner || owner.id === playerCountry.id) return;
+
+    const adj = neighbors(army.tile);
+    const playerAdj = adj.filter(t => t.owner === "player");
+    if (playerAdj.length > 0) {
+      const target = playerAdj[randInt(0, playerAdj.length - 1)];
+      moveArmy(army, target);
+      return;
+    }
+
+    const enemyAdj = adj.filter(t => t.owner === null || t.owner === undefined || t.owner === "player");
+    if (enemyAdj.length > 0 && Math.random() < 0.4) {
+      const target = enemyAdj[randInt(0, enemyAdj.length - 1)];
+      moveArmy(army, target);
+    }
+  });
 }
 
 /* ===========================
@@ -1244,18 +1405,21 @@ function nextTurn() {
   turn++;
   researchPoints += RESEARCH_PER_TURN;
 
-  processProduction(); // supply chains
+  processProduction();
   money += income - upkeep;
+
+  aiTurn();
 
   recalcEconomy();
   updateStats();
   updateGoodsBar();
   renderTechTree();
-  log(`Turn ${turn}: Net ${income - upkeep >= 0 ? "+" : ""}${income - upkeep}.`);
+  renderArmyList();
+  log(`Turn ${turn}: Net ${income - upkeep >= 0 ? "+" : ""}${Math.round(income - upkeep)}.`);
 }
 
 /* ===========================
-   INIT
+   INIT & EVENTS
 =========================== */
 
 function init() {
@@ -1266,10 +1430,6 @@ function init() {
   startBtn.addEventListener("click", startGame);
   nextTurnBtn.addEventListener("click", nextTurn);
 
-  recruitInfantryBtn.addEventListener("click", () => recruitUnit("infantry"));
-  recruitCavalryBtn.addEventListener("click", () => recruitUnit("cavalry"));
-  recruitArtilleryBtn.addEventListener("click", () => recruitUnit("artillery"));
-
   document.querySelectorAll(".tech-tab").forEach(btn => {
     btn.addEventListener("click", () => {
       currentTechTab = btn.dataset.tab;
@@ -1277,8 +1437,42 @@ function init() {
     });
   });
 
+  createArmyBtn.addEventListener("click", () => {
+    if (!selectedTile || !playerCountry) return;
+    if (getArmiesAtTile(selectedTile, playerCountry.id).length > 0) return;
+    const army = createArmyAtTile(selectedTile, playerCountry.id);
+    selectedArmyId = army.id;
+    selectedArmyLabelEl.textContent = `#${army.id} ${army.name}`;
+    renderArmyList();
+    updateArmyButtons();
+  });
+
+  addInfantryBtn.addEventListener("click", () => {
+    const army = armies.find(a => a.id === selectedArmyId && a.ownerCountryId === playerCountry.id);
+    if (!army) return;
+    addBattalionToArmy(army, "infantry", true);
+  });
+
+  addCavalryBtn.addEventListener("click", () => {
+    const army = armies.find(a => a.id === selectedArmyId && a.ownerCountryId === playerCountry.id);
+    if (!army) return;
+    addBattalionToArmy(army, "cavalry", true);
+  });
+
+  addArtilleryBtn.addEventListener("click", () => {
+    const army = armies.find(a => a.id === selectedArmyId && a.ownerCountryId === playerCountry.id);
+    if (!army) return;
+    addBattalionToArmy(army, "artillery", true);
+  });
+
+  addConscriptBtn.addEventListener("click", () => {
+    const army = armies.find(a => a.id === selectedArmyId && a.ownerCountryId === playerCountry.id);
+    if (!army) return;
+    addBattalionToArmy(army, "conscript_infantry", true);
+  });
+
   renderTechTree();
-  updateRecruitButtons();
+  updateArmyButtons();
   updateGoodsBar();
 }
 
