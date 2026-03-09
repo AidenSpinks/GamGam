@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Simple Graph Maker</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 20px;
+    }
+    .container {
+      display: flex;
+      gap: 20px;
+      align-items: flex-start;
+    }
+    .controls {
+      max-width: 300px;
+    }
+    label {
+      display: block;
+      margin-top: 10px;
+      font-weight: bold;
+    }
+    textarea, input {
+      width: 100%;
+      box-sizing: border-box;
+      margin-top: 5px;
+    }
+    button {
+      margin-top: 10px;
+      padding: 8px 12px;
+      cursor: pointer;
+    }
+    canvas {
+      border: 1px solid #ccc;
+      background: #fafafa;
+    }
+  </style>
+</head>
+<body>
+  <h1>Simple Graph Maker (Bar Chart)</h1>
+  <div class="container">
+    <div class="controls">
+      <p>Enter labels and values separated by commas.</p>
+
+      <label for="labels">Labels (e.g. A,B,C,D):</label>
+      <input id="labels" type="text" value="A,B,C,D" />
+
+      <label for="values">Values (e.g. 10,25,15,30):</label>
+      <input id="values" type="text" value="10,25,15,30" />
+
+      <label for="title">Chart title:</label>
+      <input id="title" type="text" value="My Bar Chart" />
+
+      <button id="drawBtn">Draw Graph</button>
+    </div>
+
+    <canvas id="chart" width="600" height="400"></canvas>
+  </div>
+
+  <script>
+    const canvas = document.getElementById('chart');
+    const ctx = canvas.getContext('2d');
+
+    const labelsInput = document.getElementById('labels');
+    const valuesInput = document.getElementById('values');
+    const titleInput = document.getElementById('title');
+    const drawBtn = document.getElementById('drawBtn');
+
+    function drawBarChart(labels, values, title) {
+      const width = canvas.width;
+      const height = canvas.height;
+
+      // Clear canvas
+      ctx.clearRect(0, 0, width, height);
+
+      // Basic padding
+      const padding = 50;
+      const chartWidth = width - padding * 2;
+      const chartHeight = height - padding * 2;
+
+      // Find max value for scaling
+      const maxValue = Math.max(...values) || 1;
+      const barWidth = chartWidth / values.length;
+
+      // Draw title
+      ctx.font = '18px Arial';
+      ctx.textAlign = 'center';
+      ctx.fillStyle = '#333';
+      ctx.fillText(title, width / 2, padding / 2);
+
+      // Draw axes
+      ctx.strokeStyle = '#333';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      // Y axis
+      ctx.moveTo(padding, padding);
+      ctx.lineTo(padding, height - padding);
+      // X axis
+      ctx.lineTo(width - padding, height - padding);
+      ctx.stroke();
+
+      // Draw bars
+      for (let i = 0; i < values.length; i++) {
+        const val = values[i];
+        const barHeight = (val / maxValue) * chartHeight;
+        const x = padding + i * barWidth + barWidth * 0.1;
+        const y = height - padding - barHeight;
+        const actualBarWidth = barWidth * 0.8;
+
+        // Bar
+        ctx.fillStyle = '#4a90e2';
+        ctx.fillRect(x, y, actualBarWidth, barHeight);
+
+        // Value text
+        ctx.fillStyle = '#000';
+        ctx.font = '12px Arial';
+        ctx.textAlign = 'center';
+        ctx.fillText(val, x + actualBarWidth / 2, y - 5);
+
+        // Label text
+        ctx.textAlign = 'center';
+        ctx.fillText(labels[i], x + actualBarWidth / 2, height - padding + 15);
+      }
+    }
+
+    drawBtn.addEventListener('click', () => {
+      const labels = labelsInput.value.split(',').map(s => s.trim()).filter(Boolean);
+      const values = valuesInput.value
+        .split(',')
+        .map(s => parseFloat(s.trim()))
+        .filter(v => !isNaN(v));
+
+      if (labels.length === 0 || values.length === 0 || labels.length !== values.length) {
+        alert('Please enter the same number of labels and numeric values.');
+        return;
+      }
+
+      const title = titleInput.value.trim() || 'My Bar Chart';
+      drawBarChart(labels, values, title);
+    });
+
+    // Initial draw
+    drawBarChart(['A', 'B', 'C', 'D'], [10, 25, 15, 30], 'My Bar Chart');
+  </script>
+</body>
+</html>
