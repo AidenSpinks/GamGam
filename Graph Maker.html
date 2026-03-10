@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>Simple Graph Maker</title>
+  <title>Multi Graph Maker</title>
   <style>
     body {
       font-family: Arial, sans-serif;
@@ -21,10 +21,11 @@
       margin-top: 10px;
       font-weight: bold;
     }
-    textarea, input {
+    input, select {
       width: 100%;
-      box-sizing: border-box;
       margin-top: 5px;
+      padding: 5px;
+      box-sizing: border-box;
     }
     button {
       margin-top: 10px;
@@ -38,19 +39,25 @@
   </style>
 </head>
 <body>
-  <h1>Simple Graph Maker (Bar Chart)</h1>
+  <h1>Multi Graph Maker</h1>
+
   <div class="container">
     <div class="controls">
-      <p>Enter labels and values separated by commas.</p>
+      <label>Graph Type:</label>
+      <select id="graphType">
+        <option value="bar">Bar Chart</option>
+        <option value="line">Line Graph</option>
+        <option value="pie">Pie Chart</option>
+      </select>
 
-      <label for="labels">Labels (e.g. A,B,C,D):</label>
+      <label>Labels (A,B,C,D):</label>
       <input id="labels" type="text" value="A,B,C,D" />
 
-      <label for="values">Values (e.g. 10,25,15,30):</label>
+      <label>Values (10,25,15,30):</label>
       <input id="values" type="text" value="10,25,15,30" />
 
-      <label for="title">Chart title:</label>
-      <input id="title" type="text" value="My Bar Chart" />
+      <label>Chart Title:</label>
+      <input id="title" type="text" value="My Chart" />
 
       <button id="drawBtn">Draw Graph</button>
     </div>
@@ -62,86 +69,137 @@
     const canvas = document.getElementById('chart');
     const ctx = canvas.getContext('2d');
 
-    const labelsInput = document.getElementById('labels');
-    const valuesInput = document.getElementById('values');
-    const titleInput = document.getElementById('title');
-    const drawBtn = document.getElementById('drawBtn');
-
     function drawBarChart(labels, values, title) {
-      const width = canvas.width;
-      const height = canvas.height;
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-      // Clear canvas
-      ctx.clearRect(0, 0, width, height);
-
-      // Basic padding
       const padding = 50;
-      const chartWidth = width - padding * 2;
-      const chartHeight = height - padding * 2;
-
-      // Find max value for scaling
-      const maxValue = Math.max(...values) || 1;
+      const chartWidth = canvas.width - padding * 2;
+      const chartHeight = canvas.height - padding * 2;
+      const maxValue = Math.max(...values);
       const barWidth = chartWidth / values.length;
 
-      // Draw title
-      ctx.font = '18px Arial';
-      ctx.textAlign = 'center';
-      ctx.fillStyle = '#333';
-      ctx.fillText(title, width / 2, padding / 2);
+      ctx.font = "18px Arial";
+      ctx.textAlign = "center";
+      ctx.fillText(title, canvas.width / 2, 30);
 
-      // Draw axes
-      ctx.strokeStyle = '#333';
-      ctx.lineWidth = 1.5;
       ctx.beginPath();
-      // Y axis
       ctx.moveTo(padding, padding);
-      ctx.lineTo(padding, height - padding);
-      // X axis
-      ctx.lineTo(width - padding, height - padding);
+      ctx.lineTo(padding, canvas.height - padding);
+      ctx.lineTo(canvas.width - padding, canvas.height - padding);
       ctx.stroke();
 
-      // Draw bars
       for (let i = 0; i < values.length; i++) {
-        const val = values[i];
-        const barHeight = (val / maxValue) * chartHeight;
+        const barHeight = (values[i] / maxValue) * chartHeight;
         const x = padding + i * barWidth + barWidth * 0.1;
-        const y = height - padding - barHeight;
-        const actualBarWidth = barWidth * 0.8;
+        const y = canvas.height - padding - barHeight;
 
-        // Bar
-        ctx.fillStyle = '#4a90e2';
-        ctx.fillRect(x, y, actualBarWidth, barHeight);
+        ctx.fillStyle = "#4a90e2";
+        ctx.fillRect(x, y, barWidth * 0.8, barHeight);
 
-        // Value text
-        ctx.fillStyle = '#000';
-        ctx.font = '12px Arial';
-        ctx.textAlign = 'center';
-        ctx.fillText(val, x + actualBarWidth / 2, y - 5);
-
-        // Label text
-        ctx.textAlign = 'center';
-        ctx.fillText(labels[i], x + actualBarWidth / 2, height - padding + 15);
+        ctx.fillStyle = "#000";
+        ctx.fillText(values[i], x + barWidth * 0.4, y - 5);
+        ctx.fillText(labels[i], x + barWidth * 0.4, canvas.height - padding + 15);
       }
     }
 
-    drawBtn.addEventListener('click', () => {
-      const labels = labelsInput.value.split(',').map(s => s.trim()).filter(Boolean);
-      const values = valuesInput.value
-        .split(',')
-        .map(s => parseFloat(s.trim()))
-        .filter(v => !isNaN(v));
+    function drawLineGraph(labels, values, title) {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-      if (labels.length === 0 || values.length === 0 || labels.length !== values.length) {
-        alert('Please enter the same number of labels and numeric values.');
+      const padding = 50;
+      const chartWidth = canvas.width - padding * 2;
+      const chartHeight = canvas.height - padding * 2;
+      const maxValue = Math.max(...values);
+      const stepX = chartWidth / (values.length - 1);
+
+      ctx.font = "18px Arial";
+      ctx.textAlign = "center";
+      ctx.fillText(title, canvas.width / 2, 30);
+
+      ctx.beginPath();
+      ctx.moveTo(padding, padding);
+      ctx.lineTo(padding, canvas.height - padding);
+      ctx.lineTo(canvas.width - padding, canvas.height - padding);
+      ctx.stroke();
+
+      ctx.beginPath();
+      ctx.strokeStyle = "#e24a4a";
+      ctx.lineWidth = 2;
+
+      values.forEach((v, i) => {
+        const x = padding + i * stepX;
+        const y = canvas.height - padding - (v / maxValue) * chartHeight;
+        if (i === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      });
+
+      ctx.stroke();
+
+      values.forEach((v, i) => {
+        const x = padding + i * stepX;
+        const y = canvas.height - padding - (v / maxValue) * chartHeight;
+
+        ctx.fillStyle = "#e24a4a";
+        ctx.beginPath();
+        ctx.arc(x, y, 4, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.fillStyle = "#000";
+        ctx.fillText(v, x, y - 10);
+        ctx.fillText(labels[i], x, canvas.height - padding + 15);
+      });
+    }
+
+    function drawPieChart(labels, values, title) {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      const total = values.reduce((a, b) => a + b, 0);
+      let startAngle = 0;
+      const centerX = canvas.width / 2;
+      const centerY = canvas.height / 2 + 20;
+      const radius = 120;
+
+      ctx.font = "18px Arial";
+      ctx.textAlign = "center";
+      ctx.fillText(title, canvas.width / 2, 30);
+
+      values.forEach((v, i) => {
+        const sliceAngle = (v / total) * Math.PI * 2;
+        const endAngle = startAngle + sliceAngle;
+
+        ctx.beginPath();
+        ctx.moveTo(centerX, centerY);
+        ctx.fillStyle = `hsl(${i * 60}, 70%, 60%)`;
+        ctx.arc(centerX, centerY, radius, startAngle, endAngle);
+        ctx.fill();
+
+        const midAngle = startAngle + sliceAngle / 2;
+        const labelX = centerX + Math.cos(midAngle) * (radius + 20);
+        const labelY = centerY + Math.sin(midAngle) * (radius + 20);
+
+        ctx.fillStyle = "#000";
+        ctx.fillText(labels[i], labelX, labelY);
+
+        startAngle = endAngle;
+      });
+    }
+
+    document.getElementById("drawBtn").addEventListener("click", () => {
+      const labels = document.getElementById("labels").value.split(",").map(s => s.trim());
+      const values = document.getElementById("values").value.split(",").map(s => parseFloat(s.trim()));
+      const title = document.getElementById("title").value;
+      const type = document.getElementById("graphType").value;
+
+      if (labels.length !== values.length || values.some(isNaN)) {
+        alert("Labels and values must match and values must be numbers.");
         return;
       }
 
-      const title = titleInput.value.trim() || 'My Bar Chart';
-      drawBarChart(labels, values, title);
+      if (type === "bar") drawBarChart(labels, values, title);
+      if (type === "line") drawLineGraph(labels, values, title);
+      if (type === "pie") drawPieChart(labels, values, title);
     });
 
-    // Initial draw
-    drawBarChart(['A', 'B', 'C', 'D'], [10, 25, 15, 30], 'My Bar Chart');
+    drawBarChart(["A", "B", "C", "D"], [10, 25, 15, 30], "My Chart");
   </script>
 </body>
 </html>
