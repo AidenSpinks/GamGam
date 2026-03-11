@@ -1,0 +1,235 @@
+import random
+import time
+
+# -----------------------------
+# Data models
+# -----------------------------
+
+class Item:
+    def __init__(self, name, type_, value):
+        self.name = name
+        self.type = type_  # "food", "water", "tool", "person"
+        self.value = value
+
+    def __repr__(self):
+        return f"{self.name}({self.type})"
+
+
+class PlayerState:
+    def __init__(self):
+        self.inventory = []
+        self.day = 1
+        self.food = 0
+        self.water = 0
+        self.health = 100
+        self.morale = 100
+        self.alive = True
+
+    def recalc_resources(self):
+        self.food = sum(1 for i in self.inventory if i.type == "food")
+        self.water = sum(1 for i in self.inventory if i.type == "water")
+
+    def consume_resources(self):
+        # Simple model: 1 food + 1 water per day
+        if self.food > 0:
+            self.food -= 1
+        else:
+            self.health -= 10
+
+        if self.water > 0:
+            self.water -= 1
+        else:
+            self.health -= 15
+
+        # Morale slowly drops
+        self.morale -= 3
+
+        if self.health <= 0 or self.morale <= 0:
+            self.alive = False
+
+
+# -----------------------------
+# World setup
+# -----------------------------
+
+HOUSE_ITEMS = [
+    Item("Soup Can", "food", 1),
+    Item("Water Bottle", "water", 1),
+    Item("Axe", "tool", 2),
+    Item("Radio", "tool", 2),
+    Item("First Aid Kit", "tool", 3),
+    Item("Daughter", "person", 3),
+    Item("Son", "person", 3),
+    Item("Spouse", "person", 3),
+]
+
+RANDOM_EVENTS = [
+    "raiders",
+    "strange_noise",
+    "trader",
+    "nothing",
+]
+
+
+# -----------------------------
+# Scavenging phase
+# -----------------------------
+
+def scavenging_phase():
+    print("NUCLEAR ALARM! You have 60 seconds to grab supplies!")
+    print("Type the number of the item you want to grab each turn.")
+    print("Time is abstracted into a limited number of picks.\n")
+
+    available_items = HOUSE_ITEMS.copy()
+    random.shuffle(available_items)
+
+    picks = 10  # abstracted from 60 seconds
+    inventory = []
+
+    while picks > 0 and available_items:
+        print(f"Picks left: {picks}")
+        for idx, item in enumerate(available_items):
+            print(f"{idx}: {item.name} [{item.type}]")
+
+        choice = input("Pick item index (or press Enter to skip): ")
+        if choice.strip() == "":
+            print("You hesitated and lost precious time...")
+            picks -= 1
+            continue
+
+        try:
+            idx = int(choice)
+            if 0 <= idx < len(available_items):
+                picked = available_items.pop(idx)
+                inventory.append(picked)
+                print(f"You grabbed: {picked.name}\n")
+                picks -= 1
+            else:
+                print("Invalid index.\n")
+        except ValueError:
+            print("Invalid input.\n")
+
+    print("\nYou rush into the shelter as the bomb hits...")
+    time.sleep(1)
+    return inventory
+
+
+# -----------------------------
+# Event system
+# -----------------------------
+
+def handle_event(player: PlayerState):
+    event = random.choice(RANDOM_EVENTS)
+    print(f"\nAn event occurs: {event.upper()}")
+
+    if event == "nothing":
+        print("Nothing special happens today.")
+        return
+
+    if event == "raiders":
+        has_axe = any(i.name == "Axe" for i in player.inventory)
+        if has_axe:
+            print("Raiders tried to break in, but you scared them off with your axe.")
+        else:
+            print("Raiders stole some of your supplies!")
+            # Remove random item if any
+            if player.inventory:
+                lost = random.choice(player.inventory)
+                player.inventory.remove(lost)
+                print(f"You lost: {lost.name}")
+    elif event == "strange_noise":
+        print("You hear strange noises outside.")
+        choice = input("Do you open the hatch? (y/n): ").lower()
+        if choice == "y":
+            outcome = random.choice(["good", "bad"])
+            if outcome == "good":
+                print("You found some supplies outside!")
+                player.inventory.append(Item("Soup Can", "food", 1))
+                player.inventory.append(Item("Water Bottle", "water", 1))
+            else:
+                print("You were injured by something outside.")
+                player.health -= 20
+        else:
+            print("You decide to stay put.")
+    elif event == "trader":
+        print("A trader knocks, offering water for food.")
+        if player.food > 0:
+            choice = input("Trade 1 food for 2 water? (y/n): ").lower()
+            if choice == "y":
+                # Remove one food item
+                for i in player.inventory:
+                    if i.type == "food":
+                        player.inventory.remove(i)
+                        break
+                player.inventory.append(Item("Water Bottle", "water", 1))
+                player.inventory.append(Item("Water Bottle", "water", 1))
+                print("Trade completed.")
+            else:
+                print("You decline the offer.")
+        else:
+            print("You have no food to trade.")
+
+
+# -----------------------------
+# Shelter survival phase
+# -----------------------------
+
+def shelter_phase(inventory):
+    player = PlayerState()
+    player.inventory = inventory
+    player.recalc_resources()
+
+    print("\n--- SHELTER PHASE ---")
+    print(f"You made it to the shelter with: {player.inventory}")
+    print(f"Food: {player.food}, Water: {player.water}\n")
+
+    while player.alive:
+        print(f"\nDAY {player.day}")
+        print(f"Health: {player.health}, Morale: {player.morale}")
+        player.recalc_resources()
+        print(f"Food: {player.food}, Water: {player.water}")
+
+        # Daily decision (very simple)
+        choice = input("Do you want to send someone to scavenge? (y/n): ").lower()
+        if choice == "y":
+            outcome = random.choice(["success", "fail", "injured"])
+            if outcome == "success":
+                print("Scavenge successful! You found some supplies.")
+                player.inventory.append(Item("Soup Can", "food", 1))
+                player.inventory.append(Item("Water Bottle", "water", 1))
+            elif outcome == "fail":
+                print("Scavenge failed. They came back empty-handed.")
+            else:
+                print("Scavenger was injured on the surface.")
+                player.health -= 15
+
+        # Random event
+        handle_event(player)
+
+        # Consume resources
+        player.consume_resources()
+
+        if not player.alive:
+            break
+
+        # Simple win condition: survive 20 days
+        if player.day >= 20:
+            print("\nYou survived long enough to be rescued!")
+            return
+
+        player.day += 1
+
+    print("\nYou did not survive the apocalypse...")
+
+
+# -----------------------------
+# Main game loop
+# -----------------------------
+
+def main():
+    inventory = scavenging_phase()
+    shelter_phase(inventory)
+
+
+if __name__ == "__main__":
+    main()
