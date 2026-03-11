@@ -1,235 +1,290 @@
-import random
-import time
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>60 Seconds‑like Prototype</title>
+  <style>
+    body { font-family: Arial, sans-serif; background:#111; color:#eee; margin:0; padding:0; }
+    #game { max-width: 800px; margin: 20px auto; padding: 20px; background:#222; border-radius:8px; }
+    button { margin: 4px; padding: 6px 10px; cursor:pointer; }
+    .hidden { display:none; }
+    .item-btn { display:block; width:100%; text-align:left; }
+    #log { max-height: 250px; overflow-y:auto; background:#000; padding:10px; margin-top:10px; font-size:0.9em; }
+    #log p { margin: 4px 0; }
+  </style>
+</head>
+<body>
+<div id="game">
+  <h1>60 Seconds‑like Prototype</h1>
 
-# -----------------------------
-# Data models
-# -----------------------------
+  <!-- SCAVENGE PHASE -->
+  <div id="scavenge-phase">
+    <h2>Scavenge Phase</h2>
+    <p>You have limited picks before the bomb hits. Grab what you can!</p>
+    <p><strong>Picks left:</strong> <span id="picks-left"></span></p>
+    <div id="items-list"></div>
+    <button id="finish-scavenge">Finish Early</button>
+  </div>
 
-class Item:
-    def __init__(self, name, type_, value):
-        self.name = name
-        self.type = type_  # "food", "water", "tool", "person"
-        self.value = value
+  <!-- SHELTER PHASE -->
+  <div id="shelter-phase" class="hidden">
+    <h2>Shelter Phase</h2>
+    <p><strong>Day:</strong> <span id="day"></span></p>
+    <p><strong>Health:</strong> <span id="health"></span> |
+       <strong>Morale:</strong> <span id="morale"></span></p>
+    <p><strong>Food:</strong> <span id="food"></span> |
+       <strong>Water:</strong> <span id="water"></span></p>
 
-    def __repr__(self):
-        return f"{self.name}({self.type})"
+    <div id="actions">
+      <button id="btn-scavenge">Send scavenger</button>
+      <button id="btn-next-day">End day</button>
+    </div>
 
+    <div id="log"></div>
+  </div>
+</div>
 
-class PlayerState:
-    def __init__(self):
-        self.inventory = []
-        self.day = 1
-        self.food = 0
-        self.water = 0
-        self.health = 100
-        self.morale = 100
-        self.alive = True
+<script>
+  // -----------------------------
+  // Data
+  // -----------------------------
+  const houseItems = [
+    { name: "Soup Can", type: "food" },
+    { name: "Water Bottle", type: "water" },
+    { name: "Axe", type: "tool" },
+    { name: "Radio", type: "tool" },
+    { name: "First Aid Kit", type: "tool" },
+    { name: "Daughter", type: "person" },
+    { name: "Son", type: "person" },
+    { name: "Spouse", type: "person" },
+  ];
 
-    def recalc_resources(self):
-        self.food = sum(1 for i in self.inventory if i.type == "food")
-        self.water = sum(1 for i in self.inventory if i.type == "water")
+  const randomEvents = ["raiders", "strange_noise", "trader", "nothing"];
 
-    def consume_resources(self):
-        # Simple model: 1 food + 1 water per day
-        if self.food > 0:
-            self.food -= 1
-        else:
-            self.health -= 10
+  const player = {
+    inventory: [],
+    day: 1,
+    health: 100,
+    morale: 100,
+    food: 0,
+    water: 0,
+    alive: true
+  };
 
-        if self.water > 0:
-            self.water -= 1
-        else:
-            self.health -= 15
+  // -----------------------------
+  // Helpers
+  // -----------------------------
+  function shuffle(arr) {
+    for (let i = arr.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [arr[i], arr[j]] = [arr[j], arr[i]];
+    }
+    return arr;
+  }
 
-        # Morale slowly drops
-        self.morale -= 3
+  function recalcResources() {
+    player.food = player.inventory.filter(i => i.type === "food").length;
+    player.water = player.inventory.filter(i => i.type === "water").length;
+  }
 
-        if self.health <= 0 or self.morale <= 0:
-            self.alive = False
+  function consumeResources() {
+    if (player.food > 0) {
+      player.food--;
+    } else {
+      player.health -= 10;
+      logMsg("You had no food. Health -10.");
+    }
 
+    if (player.water > 0) {
+      player.water--;
+    } else {
+      player.health -= 15;
+      logMsg("You had no water. Health -15.");
+    }
 
-# -----------------------------
-# World setup
-# -----------------------------
+    player.morale -= 3;
+    if (player.health <= 0 || player.morale <= 0) {
+      player.alive = false;
+    }
+  }
 
-HOUSE_ITEMS = [
-    Item("Soup Can", "food", 1),
-    Item("Water Bottle", "water", 1),
-    Item("Axe", "tool", 2),
-    Item("Radio", "tool", 2),
-    Item("First Aid Kit", "tool", 3),
-    Item("Daughter", "person", 3),
-    Item("Son", "person", 3),
-    Item("Spouse", "person", 3),
-]
+  function logMsg(msg) {
+    const log = document.getElementById("log");
+    const p = document.createElement("p");
+    p.textContent = msg;
+    log.appendChild(p);
+    log.scrollTop = log.scrollHeight;
+  }
 
-RANDOM_EVENTS = [
-    "raiders",
-    "strange_noise",
-    "trader",
-    "nothing",
-]
+  // -----------------------------
+  // Scavenge Phase
+  // -----------------------------
+  let picksLeft = 10;
+  let availableItems = shuffle([...houseItems]);
 
+  const picksSpan = document.getElementById("picks-left");
+  const itemsListDiv = document.getElementById("items-list");
+  const scavengePhaseDiv = document.getElementById("scavenge-phase");
+  const shelterPhaseDiv = document.getElementById("shelter-phase");
 
-# -----------------------------
-# Scavenging phase
-# -----------------------------
+  function renderScavenge() {
+    picksSpan.textContent = picksLeft;
+    itemsListDiv.innerHTML = "";
+    availableItems.forEach((item, index) => {
+      const btn = document.createElement("button");
+      btn.className = "item-btn";
+      btn.textContent = `${item.name} [${item.type}]`;
+      btn.onclick = () => pickItem(index);
+      itemsListDiv.appendChild(btn);
+    });
+  }
 
-def scavenging_phase():
-    print("NUCLEAR ALARM! You have 60 seconds to grab supplies!")
-    print("Type the number of the item you want to grab each turn.")
-    print("Time is abstracted into a limited number of picks.\n")
+  function pickItem(index) {
+    if (picksLeft <= 0) return;
+    const item = availableItems.splice(index, 1)[0];
+    player.inventory.push(item);
+    picksLeft--;
+    renderScavenge();
+    if (picksLeft <= 0) {
+      startShelterPhase();
+    }
+  }
 
-    available_items = HOUSE_ITEMS.copy()
-    random.shuffle(available_items)
+  document.getElementById("finish-scavenge").onclick = () => {
+    startShelterPhase();
+  };
 
-    picks = 10  # abstracted from 60 seconds
-    inventory = []
+  function startShelterPhase() {
+    scavengePhaseDiv.classList.add("hidden");
+    shelterPhaseDiv.classList.remove("hidden");
+    recalcResources();
+    updateShelterUI();
+    logMsg("You made it to the shelter with: " +
+      player.inventory.map(i => i.name).join(", "));
+  }
 
-    while picks > 0 and available_items:
-        print(f"Picks left: {picks}")
-        for idx, item in enumerate(available_items):
-            print(f"{idx}: {item.name} [{item.type}]")
+  // -----------------------------
+  // Shelter Phase
+  // -----------------------------
+  const daySpan = document.getElementById("day");
+  const healthSpan = document.getElementById("health");
+  const moraleSpan = document.getElementById("morale");
+  const foodSpan = document.getElementById("food");
+  const waterSpan = document.getElementById("water");
 
-        choice = input("Pick item index (or press Enter to skip): ")
-        if choice.strip() == "":
-            print("You hesitated and lost precious time...")
-            picks -= 1
-            continue
+  function updateShelterUI() {
+    daySpan.textContent = player.day;
+    healthSpan.textContent = player.health;
+    moraleSpan.textContent = player.morale;
+    foodSpan.textContent = player.food;
+    waterSpan.textContent = player.water;
+  }
 
-        try:
-            idx = int(choice)
-            if 0 <= idx < len(available_items):
-                picked = available_items.pop(idx)
-                inventory.append(picked)
-                print(f"You grabbed: {picked.name}\n")
-                picks -= 1
-            else:
-                print("Invalid index.\n")
-        except ValueError:
-            print("Invalid input.\n")
+  function handleEvent() {
+    const event = randomEvents[Math.floor(Math.random() * randomEvents.length)];
+    logMsg("Event: " + event.toUpperCase());
 
-    print("\nYou rush into the shelter as the bomb hits...")
-    time.sleep(1)
-    return inventory
+    if (event === "nothing") {
+      logMsg("Nothing special happens today.");
+      return;
+    }
 
+    if (event === "raiders") {
+      const hasAxe = player.inventory.some(i => i.name === "Axe");
+      if (hasAxe) {
+        logMsg("Raiders tried to break in, but you scared them off with your axe.");
+      } else {
+        logMsg("Raiders stole some of your supplies!");
+        if (player.inventory.length > 0) {
+          const idx = Math.floor(Math.random() * player.inventory.length);
+          const lost = player.inventory.splice(idx, 1)[0];
+          logMsg("You lost: " + lost.name);
+          recalcResources();
+        }
+      }
+    } else if (event === "strange_noise") {
+      const open = confirm("You hear strange noises outside. Open the hatch?");
+      if (open) {
+        const outcome = Math.random() < 0.5 ? "good" : "bad";
+        if (outcome === "good") {
+          logMsg("You found some supplies outside!");
+          player.inventory.push({ name: "Soup Can", type: "food" });
+          player.inventory.push({ name: "Water Bottle", type: "water" });
+          recalcResources();
+        } else {
+          logMsg("You were injured by something outside. Health -20.");
+          player.health -= 20;
+        }
+      } else {
+        logMsg("You decide to stay put.");
+      }
+    } else if (event === "trader") {
+      logMsg("A trader knocks, offering water for food.");
+      if (player.food > 0) {
+        const trade = confirm("Trade 1 food for 2 water?");
+        if (trade) {
+          const idx = player.inventory.findIndex(i => i.type === "food");
+          if (idx !== -1) player.inventory.splice(idx, 1);
+          player.inventory.push({ name: "Water Bottle", type: "water" });
+          player.inventory.push({ name: "Water Bottle", type: "water" });
+          recalcResources();
+          logMsg("Trade completed.");
+        } else {
+          logMsg("You decline the offer.");
+        }
+      } else {
+        logMsg("You have no food to trade.");
+      }
+    }
+  }
 
-# -----------------------------
-# Event system
-# -----------------------------
+  function endDay() {
+    if (!player.alive) return;
+    handleEvent();
+    consumeResources();
+    recalcResources();
+    updateShelterUI();
 
-def handle_event(player: PlayerState):
-    event = random.choice(RANDOM_EVENTS)
-    print(f"\nAn event occurs: {event.upper()}")
+    if (!player.alive) {
+      logMsg("You did not survive the apocalypse...");
+      alert("Game over");
+      return;
+    }
 
-    if event == "nothing":
-        print("Nothing special happens today.")
-        return
+    if (player.day >= 20) {
+      logMsg("You survived long enough to be rescued!");
+      alert("You win! Rescued on day " + player.day);
+      return;
+    }
 
-    if event == "raiders":
-        has_axe = any(i.name == "Axe" for i in player.inventory)
-        if has_axe:
-            print("Raiders tried to break in, but you scared them off with your axe.")
-        else:
-            print("Raiders stole some of your supplies!")
-            # Remove random item if any
-            if player.inventory:
-                lost = random.choice(player.inventory)
-                player.inventory.remove(lost)
-                print(f"You lost: {lost.name}")
-    elif event == "strange_noise":
-        print("You hear strange noises outside.")
-        choice = input("Do you open the hatch? (y/n): ").lower()
-        if choice == "y":
-            outcome = random.choice(["good", "bad"])
-            if outcome == "good":
-                print("You found some supplies outside!")
-                player.inventory.append(Item("Soup Can", "food", 1))
-                player.inventory.append(Item("Water Bottle", "water", 1))
-            else:
-                print("You were injured by something outside.")
-                player.health -= 20
-        else:
-            print("You decide to stay put.")
-    elif event == "trader":
-        print("A trader knocks, offering water for food.")
-        if player.food > 0:
-            choice = input("Trade 1 food for 2 water? (y/n): ").lower()
-            if choice == "y":
-                # Remove one food item
-                for i in player.inventory:
-                    if i.type == "food":
-                        player.inventory.remove(i)
-                        break
-                player.inventory.append(Item("Water Bottle", "water", 1))
-                player.inventory.append(Item("Water Bottle", "water", 1))
-                print("Trade completed.")
-            else:
-                print("You decline the offer.")
-        else:
-            print("You have no food to trade.")
+    player.day++;
+    updateShelterUI();
+  }
 
+  document.getElementById("btn-scavenge").onclick = () => {
+    if (!player.alive) return;
+    const roll = Math.random();
+    if (roll < 0.4) {
+      logMsg("Scavenge successful! You found some supplies.");
+      player.inventory.push({ name: "Soup Can", type: "food" });
+      player.inventory.push({ name: "Water Bottle", type: "water" });
+      recalcResources();
+      updateShelterUI();
+    } else if (roll < 0.8) {
+      logMsg("Scavenge failed. They came back empty-handed.");
+    } else {
+      logMsg("Scavenger was injured on the surface. Health -15.");
+      player.health -= 15;
+      updateShelterUI();
+    }
+  };
 
-# -----------------------------
-# Shelter survival phase
-# -----------------------------
+  document.getElementById("btn-next-day").onclick = () => {
+    endDay();
+  };
 
-def shelter_phase(inventory):
-    player = PlayerState()
-    player.inventory = inventory
-    player.recalc_resources()
-
-    print("\n--- SHELTER PHASE ---")
-    print(f"You made it to the shelter with: {player.inventory}")
-    print(f"Food: {player.food}, Water: {player.water}\n")
-
-    while player.alive:
-        print(f"\nDAY {player.day}")
-        print(f"Health: {player.health}, Morale: {player.morale}")
-        player.recalc_resources()
-        print(f"Food: {player.food}, Water: {player.water}")
-
-        # Daily decision (very simple)
-        choice = input("Do you want to send someone to scavenge? (y/n): ").lower()
-        if choice == "y":
-            outcome = random.choice(["success", "fail", "injured"])
-            if outcome == "success":
-                print("Scavenge successful! You found some supplies.")
-                player.inventory.append(Item("Soup Can", "food", 1))
-                player.inventory.append(Item("Water Bottle", "water", 1))
-            elif outcome == "fail":
-                print("Scavenge failed. They came back empty-handed.")
-            else:
-                print("Scavenger was injured on the surface.")
-                player.health -= 15
-
-        # Random event
-        handle_event(player)
-
-        # Consume resources
-        player.consume_resources()
-
-        if not player.alive:
-            break
-
-        # Simple win condition: survive 20 days
-        if player.day >= 20:
-            print("\nYou survived long enough to be rescued!")
-            return
-
-        player.day += 1
-
-    print("\nYou did not survive the apocalypse...")
-
-
-# -----------------------------
-# Main game loop
-# -----------------------------
-
-def main():
-    inventory = scavenging_phase()
-    shelter_phase(inventory)
-
-
-if __name__ == "__main__":
-    main()
+  // Init
+  renderScavenge();
+</script>
+</body>
+</html>
