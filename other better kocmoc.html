@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>Mini Grand Strategy – Vic3 Armies & Supply Chains</title>
+<title>Mini Grand Strategy – Vic3 Armies, Navies & Supply Chains</title>
 <style>
   body {
     margin: 0;
@@ -12,17 +12,6 @@
     display: flex;
     height: 100vh;
     overflow: hidden;
-  }
-
-  #sidebar {
-    flex: 1.4;
-    display: flex;
-    flex-direction: column;
-    background: #141414;
-    padding: 8px;
-    box-sizing: border-box;
-    overflow-y: auto;
-    overflow-x: hidden;
   }
 
   #map-container {
@@ -61,6 +50,20 @@
   }
   .tile.enemy {
     border: 2px solid #ff5555;
+  }
+  .tile.water {
+    background: #1f3b70 !important;
+  }
+
+  #sidebar {
+    flex: 1.4;
+    display: flex;
+    flex-direction: column;
+    background: #141414;
+    padding: 8px;
+    box-sizing: border-box;
+    overflow-y: auto;
+    overflow-x: hidden;
   }
 
   #top-panel {
@@ -171,7 +174,7 @@
     font-size: 10px;
   }
 
-  .army-entry {
+  .army-entry, .navy-entry {
     font-size: 11px;
     margin-bottom: 2px;
     cursor: pointer;
@@ -203,6 +206,37 @@
   .tech-tab.active {
     background: #555;
     border-color: #aaa;
+  }
+
+  /* Invasion modal */
+  #invasion-modal-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.6);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    z-index: 50;
+  }
+  #invasion-modal {
+    background: #1b1b1b;
+    border: 1px solid #555;
+    padding: 10px;
+    width: 320px;
+    font-size: 12px;
+  }
+  #invasion-modal h3 {
+    margin: 0 0 6px 0;
+    font-size: 14px;
+  }
+  #invasion-modal select {
+    width: 100%;
+    margin-bottom: 4px;
+    background: #222;
+    color: #eee;
+    border: 1px solid #444;
+    font-size: 11px;
+    padding: 2px;
   }
 </style>
 </head>
@@ -239,7 +273,6 @@
 
     <div class="panel" id="tech-panel">
       <h2>Tech Tree</h2>
-
       <div id="tech-tabs">
         <button class="tech-tab" data-tab="production">
           <span class="icon">🛠</span>
@@ -258,7 +291,6 @@
           <span class="label">Technologies</span>
         </button>
       </div>
-
       <div id="tech-list"></div>
     </div>
 
@@ -270,7 +302,7 @@
         <hr>
         <div id="army-actions">
           <div><strong>Selected Army:</strong> <span id="selected-army-label">None</span></div>
-          <div style="font-size:10px;">Click an army, then click adjacent tiles to move/attack.</div>
+          <div style="font-size:10px;">Click an army, then click adjacent land tiles to move/attack.</div>
           <hr>
           <div><strong>Army Management (on selected state):</strong></div>
           <button id="create-army-btn" disabled>Create Army Here</button>
@@ -282,15 +314,31 @@
       </div>
     </div>
 
+    <div class="panel" id="navy-panel">
+      <h2>Navies</h2>
+      <div><strong>Navies:</strong></div>
+      <div id="navy-list"></div>
+      <hr>
+      <div><strong>Selected Navy:</strong> <span id="selected-navy-label">None</span></div>
+      <div style="font-size:10px;">Click a navy, then click adjacent water tiles to move.</div>
+      <hr>
+      <div><strong>Navy Management (on selected coastal state):</strong></div>
+      <button id="create-navy-btn" disabled>Create Navy Here</button>
+      <button id="add-transport-btn" disabled>Add Transport Ship</button>
+      <button id="add-gunship-btn" disabled>Add Light Gunship</button>
+      <hr>
+      <button id="open-invasion-btn" disabled>Plan Naval Invasion</button>
+    </div>
+
     <div class="panel" id="info-panel">
       <h2>Info</h2>
       <div style="font-size:11px;">
-        - Build economy to grow income and goods.<br>
-        - Buildings consume inputs and produce outputs each turn.<br>
-        - Switch production methods to use coal engines and steam tech.<br>
-        - Create armies and add battalions instead of single units.<br>
-        - Conscripts unlock with Firearms and cost no money.<br>
-        - AI countries (including tribes) raise armies and react to attacks.
+        - Build economy and supply chains (wood → tools → steel → guns).<br>
+        - Buildings have production methods (hand vs coal engine, steam, etc.).<br>
+        - Armies are groups of battalions; conscripts unlock with Firearms.<br>
+        - Navies move only on water and carry invasions across seas.<br>
+        - Invasions require a navy with ≥1 Transport & ≥1 Light Gunship.<br>
+        - AI countries and tribes raise armies and react to attacks.
       </div>
     </div>
   </div>
@@ -298,6 +346,24 @@
   <div id="log">
     <strong>Log</strong>
     <div id="log-entry"></div>
+  </div>
+</div>
+
+<!-- Invasion modal -->
+<div id="invasion-modal-backdrop">
+  <div id="invasion-modal">
+    <h3>Naval Invasion</h3>
+    <div><strong>Target Country:</strong></div>
+    <select id="invasion-target-select"></select>
+    <div><strong>Army Group:</strong></div>
+    <select id="invasion-army-select"></select>
+    <div><strong>Navy Group:</strong></div>
+    <select id="invasion-navy-select"></select>
+    <div style="font-size:10px;margin:4px 0;">
+      Navy must have at least 1 Transport Ship and 1 Light Gunship.
+    </div>
+    <button id="launch-invasion-btn">Launch Invasion</button>
+    <button id="cancel-invasion-btn">Cancel</button>
   </div>
 </div>
 
@@ -319,7 +385,7 @@ const MAX_TRIBAL_TILES = 7;
 const START_MONEY = 200;
 const RESEARCH_PER_TURN = 1;
 
-/* GOODS (global stockpile) */
+/* GOODS */
 let goods = {
   wood: 0,
   coal: 0,
@@ -518,12 +584,18 @@ const TECHS = [
   { id: "mechanized_workshops", name: "Mechanized Workshops", cost: 10, prereq: ["coal_engine"], category: "technologies", desc: "Improves logging and workshops using coal." }
 ];
 
-/* Military units (battalion types) */
+/* Military units */
 const UNIT_TYPES = {
   infantry: { name: "Infantry", cost: 40, upkeep: 3, attack: 5, defense: 4, tech: "firearms" },
   cavalry: { name: "Cavalry", cost: 60, upkeep: 4, attack: 7, defense: 3, tech: "cavalry_tactics" },
   artillery: { name: "Artillery", cost: 80, upkeep: 5, attack: 9, defense: 2, tech: "artillery" },
   conscript_infantry: { name: "Conscript Infantry", cost: 0, upkeep: 4, attack: 3, defense: 3, tech: "firearms", conscript: true }
+};
+
+/* Ships */
+const SHIP_TYPES = {
+  transport: { name: "Transport Ship", cost: 50, upkeep: 2, attack: 0, defense: 1 },
+  light_gunship: { name: "Light Gunship", cost: 80, upkeep: 3, attack: 4, defense: 3 }
 };
 
 /* ===========================
@@ -547,6 +619,10 @@ let unlockedTechs = new Set();
 let armies = [];
 let selectedArmyId = null;
 
+/* navies: {id, name, tile, ownerCountryId, ships:[{type,count}]} */
+let navies = [];
+let selectedNavyId = null;
+
 let currentTechTab = "production";
 
 /* ===========================
@@ -562,6 +638,7 @@ const buildMenuEl = document.getElementById("build-menu");
 const logEntryEl = document.getElementById("log-entry");
 const techListEl = document.getElementById("tech-list");
 const armyListEl = document.getElementById("army-list");
+const navyListEl = document.getElementById("navy-list");
 
 const statTurnEl = document.getElementById("stat-turn");
 const statMoneyEl = document.getElementById("stat-money");
@@ -576,6 +653,19 @@ const addCavalryBtn = document.getElementById("add-cavalry-btn");
 const addArtilleryBtn = document.getElementById("add-artillery-btn");
 const addConscriptBtn = document.getElementById("add-conscript-btn");
 const selectedArmyLabelEl = document.getElementById("selected-army-label");
+
+const createNavyBtn = document.getElementById("create-navy-btn");
+const addTransportBtn = document.getElementById("add-transport-btn");
+const addGunshipBtn = document.getElementById("add-gunship-btn");
+const selectedNavyLabelEl = document.getElementById("selected-navy-label");
+const openInvasionBtn = document.getElementById("open-invasion-btn");
+
+const invasionBackdropEl = document.getElementById("invasion-modal-backdrop");
+const invasionTargetSelectEl = document.getElementById("invasion-target-select");
+const invasionArmySelectEl = document.getElementById("invasion-army-select");
+const invasionNavySelectEl = document.getElementById("invasion-navy-select");
+const launchInvasionBtn = document.getElementById("launch-invasion-btn");
+const cancelInvasionBtn = document.getElementById("cancel-invasion-btn");
 
 /* ===========================
    UTIL
@@ -624,6 +714,14 @@ function getCountryById(id) {
   return countries.find(c => c.id === id);
 }
 
+function isWater(tile) {
+  return tile.type === "water";
+}
+
+function isLand(tile) {
+  return !isWater(tile);
+}
+
 /* ===========================
    MAP GENERATION
 =========================== */
@@ -642,7 +740,8 @@ function generateEmptyMap() {
         owner: null,
         country: null,
         buildings: [],
-        el: null
+        el: null,
+        type: "land"
       };
       const div = document.createElement("div");
       div.className = "tile";
@@ -652,6 +751,17 @@ function generateEmptyMap() {
       mapEl.appendChild(div);
     }
     tiles.push(row);
+  }
+
+  // Simple water generation: top and bottom rows + some random lakes
+  for (let x = 0; x < MAP_WIDTH; x++) {
+    tiles[0][x].type = "water";
+    tiles[MAP_HEIGHT - 1][x].type = "water";
+  }
+  for (let i = 0; i < 20; i++) {
+    const x = randInt(0, MAP_WIDTH - 1);
+    const y = randInt(1, MAP_HEIGHT - 2);
+    tiles[y][x].type = "water";
   }
 }
 
@@ -685,8 +795,8 @@ function generateCountries() {
       key = `${x},${y}`;
       tries++;
       if (tries > 200) break;
-    } while (used.has(key));
-    if (used.has(key)) return;
+    } while (used.has(key) || isWater(tiles[y][x]));
+    if (used.has(key) || isWater(tiles[y][x])) return;
     used.add(key);
     const t = tiles[y][x];
     t.country = c;
@@ -698,7 +808,7 @@ function generateCountries() {
   while (queue.length > 0) {
     const { tile, country } = queue.shift();
     for (const n of neighbors(tile)) {
-      if (!n.country) {
+      if (!n.country && isLand(n)) {
         n.country = country;
         country.tiles.push(n);
         queue.push({ tile: n, country });
@@ -718,7 +828,7 @@ function generateCountries() {
   for (let y = 0; y < MAP_HEIGHT; y++) {
     for (let x = 0; x < MAP_WIDTH; x++) {
       const t = tiles[y][x];
-      if (!inCountrySet.has(t)) {
+      if (!inCountrySet.has(t) && isLand(t)) {
         t.country = null;
       }
     }
@@ -729,7 +839,10 @@ function generateCountries() {
   for (let y = 0; y < MAP_HEIGHT; y++) {
     for (let x = 0; x < MAP_WIDTH; x++) {
       const t = tiles[y][x];
-      if (t.country) {
+      if (isWater(t)) {
+        t.el.classList.add("water");
+        t.el.style.background = "#1f3b70";
+      } else if (t.country) {
         if (t.country.tribal) {
           t.el.style.background = "#8b5a2b";
         } else {
@@ -750,7 +863,7 @@ function createTribalCountries() {
   for (let y = 0; y < MAP_HEIGHT; y++) {
     for (let x = 0; x < MAP_WIDTH; x++) {
       const t = tiles[y][x];
-      if (!t.country) neutralTiles.push(t);
+      if (!t.country && isLand(t)) neutralTiles.push(t);
     }
   }
   if (neutralTiles.length === 0) return;
@@ -779,7 +892,7 @@ function createTribalCountries() {
     while (q.length > 0 && tribe.tiles.length < targetSize) {
       const cur = q.shift();
       for (const n of neighbors(cur)) {
-        if (!n.country) {
+        if (!n.country && isLand(n)) {
           n.country = tribe;
           tribe.tiles.push(n);
           q.push(n);
@@ -823,7 +936,7 @@ function startGame() {
   countries.forEach(c => {
     if (c !== playerCountry) {
       c.tiles.forEach(t => {
-        if (!t.owner) t.el.classList.add("enemy");
+        if (!t.owner && isLand(t)) t.el.classList.add("enemy");
       });
     }
   });
@@ -833,7 +946,9 @@ function startGame() {
   researchPoints = 0;
   unlockedTechs = new Set();
   armies = [];
+  navies = [];
   selectedArmyId = null;
+  selectedNavyId = null;
   goods = { wood: 0, coal: 0, iron: 0, tools: 0, steel: 0, guns: 0 };
 
   recalcEconomy();
@@ -841,13 +956,16 @@ function startGame() {
   updateGoodsBar();
   renderTechTree();
   renderArmyList();
+  renderNavyList();
   updateArmyButtons();
+  updateNavyButtons();
 
   startBtn.disabled = true;
   countrySelectEl.disabled = true;
   nextTurnBtn.disabled = false;
 
   initAIMilitaries();
+  initAINavies();
 
   log(`You now control ${playerCountry.name}.`);
 }
@@ -855,26 +973,39 @@ function startGame() {
 function onTileClick(tile) {
   if (!playerCountry) return;
 
-  const armyHere = armies.find(a => a.tile === tile && a.ownerCountryId === playerCountry.id);
+  // Army movement: only on land
   if (selectedArmyId !== null) {
-    const army = armies.find(a => a.id === selectedArmyId);
-    if (army && isAdjacent(army.tile, tile)) {
+    const army = armies.find(a => a.id === selectedArmyId && a.ownerCountryId === playerCountry.id);
+    if (army && isAdjacent(army.tile, tile) && isLand(tile)) {
       moveArmy(army, tile);
       return;
     }
   }
 
-  if (tile.owner !== "player") {
+  // Navy movement: only on water
+  if (selectedNavyId !== null) {
+    const navy = navies.find(n => n.id === selectedNavyId && n.ownerCountryId === playerCountry.id);
+    if (navy && isAdjacent(navy.tile, tile) && isWater(tile)) {
+      moveNavy(navy, tile);
+      return;
+    }
+  }
+
+  if (tile.owner !== "player" || isWater(tile)) {
     selectedTile = null;
-    stateInfoEl.textContent = "This is not your state.";
+    stateInfoEl.textContent = isWater(tile)
+      ? "This is water. Armies cannot move here."
+      : "This is not your state.";
     buildMenuEl.innerHTML = "";
     updateArmyButtons();
+    updateNavyButtons();
     return;
   }
 
   selectedTile = tile;
   updateStatePanel();
   updateArmyButtons();
+  updateNavyButtons();
 }
 
 function updateStatePanel() {
@@ -1015,6 +1146,16 @@ function recalcEconomy() {
     });
   });
 
+  navies.forEach(n => {
+    const owner = getCountryById(n.ownerCountryId);
+    if (!owner || owner.id !== playerCountry.id) return;
+    n.ships.forEach(s => {
+      const st = SHIP_TYPES[s.type];
+      if (!st) return;
+      upk += st.upkeep * s.count;
+    });
+  });
+
   if (unlockedTechs.has("administration")) {
     inc = Math.round(inc * 1.1);
   }
@@ -1043,7 +1184,7 @@ function updateGoodsBar() {
 }
 
 /* ===========================
-   PRODUCTION (SUPPLY CHAINS)
+   PRODUCTION
 =========================== */
 
 function processProduction() {
@@ -1152,7 +1293,7 @@ function researchTech(tech) {
 }
 
 /* ===========================
-   ARMIES (VIC3 STYLE)
+   ARMIES
 =========================== */
 
 function nextArmyId() {
@@ -1183,30 +1324,37 @@ function getArmiesAtTile(tile, ownerCountryId = null) {
 
 function renderArmyList() {
   armyListEl.innerHTML = "";
-  armies.forEach(a => {
-    const owner = getCountryById(a.ownerCountryId);
-    const div = document.createElement("div");
-    div.className = "army-entry";
-    const summary = a.units.map(u => `${u.count} ${UNIT_TYPES[u.type].name}`).join(", ") || "No units";
-    div.textContent = `#${a.id} ${a.name} @ (${a.tile.x}, ${a.tile.y}) [${summary}]`;
-    if (a.id === selectedArmyId) {
-      div.style.color = "#ffd700";
-    }
-    div.onclick = () => {
-      selectedArmyId = a.id;
-      selectedArmyLabelEl.textContent = `#${a.id} ${a.name}`;
-      renderArmyList();
-      updateArmyButtons();
-    };
-    armyListEl.appendChild(div);
-  });
+  if (!playerCountry) return;
+
+  armies
+    .filter(a => a.ownerCountryId === playerCountry.id)
+    .forEach(a => {
+      const div = document.createElement("div");
+      div.className = "army-entry";
+      const summary = a.units.map(u => `${u.count} ${UNIT_TYPES[u.type].name}`).join(", ") || "No units";
+      div.textContent = `#${a.id} ${a.name} @ (${a.tile.x}, ${a.tile.y}) [${summary}]`;
+      if (a.id === selectedArmyId) {
+        div.style.color = "#ffd700";
+      }
+      div.onclick = () => {
+        if (!playerCountry || a.ownerCountryId !== playerCountry.id) {
+          log("You cannot control other countries' armies.");
+          return;
+        }
+        selectedArmyId = a.id;
+        selectedArmyLabelEl.textContent = `#${a.id} ${a.name}`;
+        renderArmyList();
+        updateArmyButtons();
+      };
+      armyListEl.appendChild(div);
+    });
 }
 
 function addBattalionToArmy(army, typeId, isPlayer) {
   const ut = UNIT_TYPES[typeId];
   if (!ut) return;
-  if (!unlockedTechs.has(ut.tech) && isPlayer) {
-    log(`You need ${TECHS.find(t => t.id === ut.tech).name} to add ${ut.name}.`);
+  if (isPlayer && (!playerCountry || army.ownerCountryId !== playerCountry.id)) {
+    log("You cannot add units to other countries' armies.");
     return;
   }
   if (!ut.conscript && isPlayer && money < ut.cost) {
@@ -1230,10 +1378,16 @@ function addBattalionToArmy(army, typeId, isPlayer) {
 }
 
 function updateArmyButtons() {
-  const canCreateArmy = !!selectedTile && selectedTile.owner === "player" && getArmiesAtTile(selectedTile, playerCountry.id).length === 0;
+  const canCreateArmy =
+    !!selectedTile &&
+    selectedTile.owner === "player" &&
+    playerCountry &&
+    isLand(selectedTile) &&
+    getArmiesAtTile(selectedTile, playerCountry.id).length === 0;
+
   createArmyBtn.disabled = !canCreateArmy;
 
-  const selectedArmy = armies.find(a => a.id === selectedArmyId && a.ownerCountryId === playerCountry?.id);
+  const selectedArmy = armies.find(a => a.id === selectedArmyId && playerCountry && a.ownerCountryId === playerCountry.id);
   const canAdd = !!selectedArmy && selectedTile && selectedArmy.tile === selectedTile;
 
   addInfantryBtn.disabled = !canAdd || !unlockedTechs.has(UNIT_TYPES.infantry.tech);
@@ -1243,6 +1397,115 @@ function updateArmyButtons() {
 
   if (!selectedArmy) {
     selectedArmyLabelEl.textContent = "None";
+  }
+}
+
+/* ===========================
+   NAVIES
+=========================== */
+
+function nextNavyId() {
+  return navies.length ? Math.max(...navies.map(n => n.id)) + 1 : 1;
+}
+
+function createNavyAtTile(tile, ownerCountryId) {
+  const id = nextNavyId();
+  const owner = getCountryById(ownerCountryId);
+  const name = `${id} ${owner ? owner.name : "Navy"}`;
+  const navy = {
+    id,
+    name,
+    tile,
+    ownerCountryId,
+    ships: []
+  };
+  navies.push(navy);
+  log(`Created ${name} at (${tile.x}, ${tile.y}).`);
+  renderNavyList();
+  updateNavyButtons();
+  return navy;
+}
+
+function getNaviesAtTile(tile, ownerCountryId = null) {
+  return navies.filter(n => n.tile === tile && (ownerCountryId === null || n.ownerCountryId === ownerCountryId));
+}
+
+function renderNavyList() {
+  navyListEl.innerHTML = "";
+  if (!playerCountry) return;
+
+  navies
+    .filter(n => n.ownerCountryId === playerCountry.id)
+    .forEach(n => {
+      const div = document.createElement("div");
+      div.className = "navy-entry";
+      const summary = n.ships.map(s => `${s.count} ${SHIP_TYPES[s.type].name}`).join(", ") || "No ships";
+      div.textContent = `#${n.id} ${n.name} @ (${n.tile.x}, ${n.tile.y}) [${summary}]`;
+      if (n.id === selectedNavyId) {
+        div.style.color = "#00bfff";
+      }
+      div.onclick = () => {
+        if (!playerCountry || n.ownerCountryId !== playerCountry.id) {
+          log("You cannot control other countries' navies.");
+          return;
+        }
+        selectedNavyId = n.id;
+        selectedNavyLabelEl.textContent = `#${n.id} ${n.name}`;
+        renderNavyList();
+        updateNavyButtons();
+      };
+      navyListEl.appendChild(div);
+    });
+}
+
+function addShipToNavy(navy, typeId, isPlayer) {
+  const st = SHIP_TYPES[typeId];
+  if (!st) return;
+  if (isPlayer && (!playerCountry || navy.ownerCountryId !== playerCountry.id)) {
+    log("You cannot add ships to other countries' navies.");
+    return;
+  }
+  if (isPlayer && money < st.cost) {
+    log(`Not enough money to add ${st.name}.`);
+    return;
+  }
+  if (isPlayer) {
+    money -= st.cost;
+  }
+  let entry = navy.ships.find(s => s.type === typeId);
+  if (!entry) {
+    entry = { type: typeId, count: 0 };
+    navy.ships.push(entry);
+  }
+  entry.count += 1;
+  log(`${isPlayer ? "Added" : "Built"} ${st.name} in ${navy.name}.`);
+  recalcEconomy();
+  updateStats();
+  updateGoodsBar();
+  renderNavyList();
+}
+
+function updateNavyButtons() {
+  const canCreateNavy =
+    !!selectedTile &&
+    selectedTile.owner === "player" &&
+    playerCountry &&
+    isLand(selectedTile) &&
+    neighbors(selectedTile).some(isWater) &&
+    getNaviesAtTile(selectedTile, playerCountry.id).length === 0;
+
+  createNavyBtn.disabled = !canCreateNavy;
+
+  const selectedNavy = navies.find(n => n.id === selectedNavyId && playerCountry && n.ownerCountryId === playerCountry.id);
+  const canAdd = !!selectedNavy && selectedTile && selectedNavy.tile === selectedTile;
+
+  addTransportBtn.disabled = !canAdd;
+  addGunshipBtn.disabled = !canAdd;
+
+  openInvasionBtn.disabled = !playerCountry || navies.filter(n => n.ownerCountryId === playerCountry.id).length === 0;
+
+  if (!selectedNavy) {
+    selectedNavyLabelEl.textContent = "None";
   }
 }
 
@@ -1287,13 +1550,15 @@ function resolveBattle(attacker, defender, tile) {
     applyCasualties(defender, 0.7);
     if (defender.units.length === 0) {
       armies = armies.filter(a => a !== defender);
-      tile.owner = "player";
-      tile.el.classList.add("player");
-      tile.el.classList.remove("enemy");
-      attacker.tile = tile;
-      if (tile.country && tile.country !== playerCountry) {
-        playerCountry.tiles.push(tile);
+      tile.owner = attacker.ownerCountryId === playerCountry?.id ? "player" : "ai";
+      if (tile.owner === "player") {
+        tile.el.classList.add("player");
+        tile.el.classList.remove("enemy");
+        if (tile.country && tile.country !== playerCountry) {
+          playerCountry.tiles.push(tile);
+        }
       }
+      attacker.tile = tile;
     }
   } else {
     log(`${attacker.name} lost battle at (${tile.x}, ${tile.y}) [${totalA} vs ${totalD}].`);
@@ -1301,7 +1566,7 @@ function resolveBattle(attacker, defender, tile) {
     applyCasualties(defender, 0.3);
     if (attacker.units.length === 0) {
       armies = armies.filter(a => a !== attacker);
-      if (attacker.ownerCountryId === playerCountry.id) {
+      if (playerCountry && attacker.ownerCountryId === playerCountry.id) {
         selectedArmyId = null;
       }
     }
@@ -1313,29 +1578,34 @@ function resolveBattle(attacker, defender, tile) {
 =========================== */
 
 function moveArmy(army, targetTile) {
-  const owner = getCountryById(army.ownerCountryId);
-  const isPlayerArmy = owner && owner.id === playerCountry.id;
+  if (!playerCountry) return;
+  if (army.ownerCountryId !== playerCountry.id) {
+    log("You cannot move armies that you do not control.");
+    return;
+  }
+  if (!isLand(targetTile)) {
+    log("Armies cannot move onto water.");
+    return;
+  }
 
   const enemyArmies = armies.filter(a => a.tile === targetTile && a.ownerCountryId !== army.ownerCountryId);
-  const enemyOwner = targetTile.owner && targetTile.owner !== "player" ? "enemy" : null;
+  const isPlayerArmy = army.ownerCountryId === playerCountry.id;
 
   if (enemyArmies.length > 0) {
     const defender = enemyArmies[0];
     resolveBattle(army, defender, targetTile);
   } else if (targetTile.owner === "player" || targetTile.owner === null || targetTile.owner === undefined) {
     army.tile = targetTile;
-    if (targetTile.owner === null || targetTile.owner === undefined) {
-      targetTile.owner = isPlayerArmy ? "player" : "ai";
-      if (isPlayerArmy) {
-        targetTile.el.classList.add("player");
-        targetTile.el.classList.remove("enemy");
-        if (targetTile.country && targetTile.country !== playerCountry) {
-          playerCountry.tiles.push(targetTile);
-        }
+    if (!targetTile.owner) {
+      targetTile.owner = "player";
+      targetTile.el.classList.add("player");
+      targetTile.el.classList.remove("enemy");
+      if (targetTile.country && targetTile.country !== playerCountry) {
+        playerCountry.tiles.push(targetTile);
       }
     }
     log(`${army.name} moved to (${targetTile.x}, ${targetTile.y}).`);
-  } else if (enemyOwner && isPlayerArmy) {
+  } else if (targetTile.owner !== "player" && isPlayerArmy) {
     const defendingArmies = armies.filter(a => a.tile === targetTile && a.ownerCountryId !== playerCountry.id);
     if (defendingArmies.length > 0) {
       resolveBattle(army, defendingArmies[0], targetTile);
@@ -1357,8 +1627,28 @@ function moveArmy(army, targetTile) {
   renderArmyList();
 }
 
+function moveNavy(navy, targetTile) {
+  if (!playerCountry) return;
+  if (navy.ownerCountryId !== playerCountry.id) {
+    log("You cannot move navies that you do not control.");
+    return;
+  }
+  if (!isWater(targetTile)) {
+    log("Navies can only move on water.");
+    return;
+  }
+
+  navy.tile = targetTile;
+  log(`${navy.name} sailed to (${targetTile.x}, ${targetTile.y}).`);
+
+  recalcEconomy();
+  updateStats();
+  updateGoodsBar();
+  renderNavyList();
+}
+
 /* ===========================
-   AI MILITARIES
+   AI MILITARIES & NAVIES
 =========================== */
 
 function initAIMilitaries() {
@@ -1368,32 +1658,192 @@ function initAIMilitaries() {
     const hq = c.hqTile || c.tiles[0];
     const army = createArmyAtTile(hq, c.id);
     const baseInf = c.tribal ? 1 : 2;
-    for (let i = 0; i < baseInf; i++) {
-      army.units.push({ type: "infantry", count: 1 });
-    }
+    army.units.push({ type: "infantry", count: baseInf });
   });
   renderArmyList();
 }
 
+function initAINavies() {
+  countries.forEach(c => {
+    if (!playerCountry || c.id === playerCountry.id) return;
+    if (!c.tiles || c.tiles.length === 0) return;
+
+    // Find a coastal tile
+    const coastal = c.tiles.find(t => neighbors(t).some(isWater));
+    if (!coastal) return;
+
+    const navy = createNavyAtTile(coastal, c.id);
+    navy.ships.push({ type: "transport", count: 1 });
+    navy.ships.push({ type: "light_gunship", count: 1 });
+  });
+  renderNavyList();
+}
+
 function aiTurn() {
+  // AI armies
   armies.forEach(army => {
     const owner = getCountryById(army.ownerCountryId);
-    if (!owner || owner.id === playerCountry.id) return;
+    if (!owner || (playerCountry && owner.id === playerCountry.id)) return;
 
-    const adj = neighbors(army.tile);
+    const adj = neighbors(army.tile).filter(isLand);
     const playerAdj = adj.filter(t => t.owner === "player");
     if (playerAdj.length > 0) {
       const target = playerAdj[randInt(0, playerAdj.length - 1)];
-      moveArmy(army, target);
+      const enemyArmies = armies.filter(a => a.tile === target && a.ownerCountryId !== army.ownerCountryId);
+      if (enemyArmies.length > 0) {
+        resolveBattle(army, enemyArmies[0], target);
+      } else {
+        army.tile = target;
+        log(`${army.name} (AI) moved to (${target.x}, ${target.y}).`);
+      }
       return;
     }
 
     const enemyAdj = adj.filter(t => t.owner === null || t.owner === undefined || t.owner === "player");
     if (enemyAdj.length > 0 && Math.random() < 0.4) {
       const target = enemyAdj[randInt(0, enemyAdj.length - 1)];
-      moveArmy(army, target);
+      const enemyArmies2 = armies.filter(a => a.tile === target && a.ownerCountryId !== army.ownerCountryId);
+      if (enemyArmies2.length > 0) {
+        resolveBattle(army, enemyArmies2[0], target);
+      } else {
+        army.tile = target;
+        if (!target.owner) {
+          target.owner = "ai";
+        }
+        log(`${army.name} (AI) moved to (${target.x}, ${target.y}).`);
+      }
     }
   });
+
+  // AI navies: simple random movement on water
+  navies.forEach(navy => {
+    const owner = getCountryById(navy.ownerCountryId);
+    if (!owner || (playerCountry && owner.id === playerCountry.id)) return;
+
+    const adjWater = neighbors(navy.tile).filter(isWater);
+    if (adjWater.length > 0 && Math.random() < 0.5) {
+      const target = adjWater[randInt(0, adjWater.length - 1)];
+      navy.tile = target;
+      log(`${navy.name} (AI) sailed to (${target.x}, ${target.y}).`);
+    }
+  });
+}
+
+/* ===========================
+   INVASIONS
+=========================== */
+
+function openInvasionModal() {
+  if (!playerCountry) return;
+
+  invasionTargetSelectEl.innerHTML = "";
+  invasionArmySelectEl.innerHTML = "";
+  invasionNavySelectEl.innerHTML = "";
+
+  countries.forEach(c => {
+    if (c.id === playerCountry.id) return;
+    const opt = document.createElement("option");
+    opt.value = c.id;
+    opt.textContent = c.name;
+    invasionTargetSelectEl.appendChild(opt);
+  });
+
+  armies
+    .filter(a => a.ownerCountryId === playerCountry.id && a.units.length > 0)
+    .forEach(a => {
+      const opt = document.createElement("option");
+      opt.value = a.id;
+      opt.textContent = `#${a.id} ${a.name}`;
+      invasionArmySelectEl.appendChild(opt);
+    });
+
+  navies
+    .filter(n => n.ownerCountryId === playerCountry.id)
+    .forEach(n => {
+      const opt = document.createElement("option");
+      opt.value = n.id;
+      opt.textContent = `#${n.id} ${n.name}`;
+      invasionNavySelectEl.appendChild(opt);
+    });
+
+  invasionBackdropEl.style.display = "flex";
+}
+
+function closeInvasionModal() {
+  invasionBackdropEl.style.display = "none";
+}
+
+function navyHasInvasionRequirements(navy) {
+  const transports = navy.ships.find(s => s.type === "transport");
+  const gunships = navy.ships.find(s => s.type === "light_gunship");
+  return transports && transports.count >= 1 && gunships && gunships.count >= 1;
+}
+
+function findCoastalTileOfCountry(countryId) {
+  const c = getCountryById(countryId);
+  if (!c) return null;
+  const coastal = c.tiles.filter(t => neighbors(t).some(isWater));
+  if (coastal.length === 0) return null;
+  return coastal[randInt(0, coastal.length - 1)];
+}
+
+function launchInvasion() {
+  if (!playerCountry) return;
+
+  const targetId = parseInt(invasionTargetSelectEl.value, 10);
+  const armyId = parseInt(invasionArmySelectEl.value, 10);
+  const navyId = parseInt(invasionNavySelectEl.value, 10);
+
+  const targetCountry = getCountryById(targetId);
+  const army = armies.find(a => a.id === armyId && a.ownerCountryId === playerCountry.id);
+  const navy = navies.find(n => n.id === navyId && n.ownerCountryId === playerCountry.id);
+
+  if (!targetCountry || !army || !navy) {
+    log("Invalid invasion selection.");
+    return;
+  }
+
+  if (!navyHasInvasionRequirements(navy)) {
+    log("Selected navy does not meet invasion requirements (needs ≥1 Transport & ≥1 Light Gunship).");
+    return;
+  }
+
+  const coastalTile = findCoastalTileOfCountry(targetCountry.id);
+  if (!coastalTile) {
+    log("Target country has no coastal tiles to invade.");
+    return;
+  }
+
+  // Move navy to adjacent water tile near coastal tile (simple teleport for now)
+  const adjWater = neighbors(coastalTile).filter(isWater);
+  if (adjWater.length === 0) {
+    log("No adjacent water tile to land the invasion.");
+    return;
+  }
+  const landingWater = adjWater[randInt(0, adjWater.length - 1)];
+  navy.tile = landingWater;
+
+  // Land army on coastal tile and fight if needed
+  const defenders = armies.filter(a => a.tile === coastalTile && a.ownerCountryId !== playerCountry.id);
+  if (defenders.length > 0) {
+    resolveBattle(army, defenders[0], coastalTile);
+  } else {
+    army.tile = coastalTile;
+    coastalTile.owner = "player";
+    coastalTile.el.classList.add("player");
+    coastalTile.el.classList.remove("enemy");
+    if (coastalTile.country && coastalTile.country !== playerCountry) {
+      playerCountry.tiles.push(coastalTile);
+    }
+    log(`${army.name} landed a naval invasion at (${coastalTile.x}, ${coastalTile.y}) in ${targetCountry.name}.`);
+  }
+
+  recalcEconomy();
+  updateStats();
+  updateGoodsBar();
+  renderArmyList();
+  renderNavyList();
+  closeInvasionModal();
 }
 
 /* ===========================
@@ -1415,6 +1865,7 @@ function nextTurn() {
   updateGoodsBar();
   renderTechTree();
   renderArmyList();
+  renderNavyList();
   log(`Turn ${turn}: Net ${income - upkeep >= 0 ? "+" : ""}${Math.round(income - upkeep)}.`);
 }
 
@@ -1439,6 +1890,10 @@ function init() {
 
   createArmyBtn.addEventListener("click", () => {
     if (!selectedTile || !playerCountry) return;
+    if (selectedTile.owner !== "player" || !isLand(selectedTile)) {
+      log("You can only create armies in your own land territory.");
+      return;
+    }
     if (getArmiesAtTile(selectedTile, playerCountry.id).length > 0) return;
     const army = createArmyAtTile(selectedTile, playerCountry.id);
     selectedArmyId = army.id;
@@ -1448,31 +1903,74 @@ function init() {
   });
 
   addInfantryBtn.addEventListener("click", () => {
-    const army = armies.find(a => a.id === selectedArmyId && a.ownerCountryId === playerCountry.id);
+    const army = armies.find(a => a.id === selectedArmyId && playerCountry && a.ownerCountryId === playerCountry.id);
     if (!army) return;
+    if (!unlockedTechs.has(UNIT_TYPES.infantry.tech)) return;
     addBattalionToArmy(army, "infantry", true);
   });
 
   addCavalryBtn.addEventListener("click", () => {
-    const army = armies.find(a => a.id === selectedArmyId && a.ownerCountryId === playerCountry.id);
+    const army = armies.find(a => a.id === selectedArmyId && playerCountry && a.ownerCountryId === playerCountry.id);
     if (!army) return;
+    if (!unlockedTechs.has(UNIT_TYPES.cavalry.tech)) return;
     addBattalionToArmy(army, "cavalry", true);
   });
 
   addArtilleryBtn.addEventListener("click", () => {
-    const army = armies.find(a => a.id === selectedArmyId && a.ownerCountryId === playerCountry.id);
+    const army = armies.find(a => a.id === selectedArmyId && playerCountry && a.ownerCountryId === playerCountry.id);
     if (!army) return;
+    if (!unlockedTechs.has(UNIT_TYPES.artillery.tech)) return;
     addBattalionToArmy(army, "artillery", true);
   });
 
   addConscriptBtn.addEventListener("click", () => {
-    const army = armies.find(a => a.id === selectedArmyId && a.ownerCountryId === playerCountry.id);
+    const army = armies.find(a => a.id === selectedArmyId && playerCountry && a.ownerCountryId === playerCountry.id);
     if (!army) return;
+    if (!unlockedTechs.has(UNIT_TYPES.conscript_infantry.tech)) return;
     addBattalionToArmy(army, "conscript_infantry", true);
+  });
+
+  createNavyBtn.addEventListener("click", () => {
+    if (!selectedTile || !playerCountry) return;
+    if (selectedTile.owner !== "player" || !isLand(selectedTile) || !neighbors(selectedTile).some(isWater)) {
+      log("You can only create navies in your coastal land states.");
+      return;
+    }
+    if (getNaviesAtTile(selectedTile, playerCountry.id).length > 0) return;
+    const navy = createNavyAtTile(selectedTile, playerCountry.id);
+    selectedNavyId = navy.id;
+    selectedNavyLabelEl.textContent = `#${navy.id} ${navy.name}`;
+    renderNavyList();
+    updateNavyButtons();
+  });
+
+  addTransportBtn.addEventListener("click", () => {
+    const navy = navies.find(n => n.id === selectedNavyId && playerCountry && n.ownerCountryId === playerCountry.id);
+    if (!navy) return;
+    addShipToNavy(navy, "transport", true);
+  });
+
+  addGunshipBtn.addEventListener("click", () => {
+    const navy = navies.find(n => n.id === selectedNavyId && playerCountry && n.ownerCountryId === playerCountry.id);
+    if (!navy) return;
+    addShipToNavy(navy, "light_gunship", true);
+  });
+
+  openInvasionBtn.addEventListener("click", () => {
+    openInvasionModal();
+  });
+
+  cancelInvasionBtn.addEventListener("click", () => {
+    closeInvasionModal();
+  });
+
+  launchInvasionBtn.addEventListener("click", () => {
+    launchInvasion();
   });
 
   renderTechTree();
   updateArmyButtons();
+  updateNavyButtons();
   updateGoodsBar();
 }
 
