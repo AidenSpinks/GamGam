@@ -1,0 +1,342 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Mini Life Sim</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background: #111;
+      color: #f5f5f5;
+      margin: 0;
+      padding: 0;
+      display: flex;
+      justify-content: center;
+      align-items: flex-start;
+      min-height: 100vh;
+    }
+
+    .game-container {
+      background: #1b1b1b;
+      margin-top: 40px;
+      padding: 20px;
+      border-radius: 8px;
+      width: 420px;
+      box-shadow: 0 0 10px rgba(0,0,0,0.6);
+    }
+
+    h1 {
+      margin-top: 0;
+      text-align: center;
+    }
+
+    .stats {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 10px;
+      font-size: 14px;
+    }
+
+    .stat {
+      padding: 4px 8px;
+      border-radius: 4px;
+      background: #222;
+    }
+
+    .log {
+      background: #101010;
+      border-radius: 4px;
+      padding: 10px;
+      height: 200px;
+      overflow-y: auto;
+      font-size: 14px;
+      margin-bottom: 10px;
+    }
+
+    .log-entry {
+      margin-bottom: 6px;
+    }
+
+    .choices {
+      margin-top: 10px;
+    }
+
+    .choice-btn {
+      display: block;
+      width: 100%;
+      margin-bottom: 6px;
+      padding: 8px;
+      border: none;
+      border-radius: 4px;
+      background: #2e7d32;
+      color: #fff;
+      cursor: pointer;
+      font-size: 14px;
+      text-align: left;
+    }
+
+    .choice-btn:hover {
+      background: #388e3c;
+    }
+
+    .next-year-btn {
+      width: 100%;
+      padding: 10px;
+      margin-top: 8px;
+      border: none;
+      border-radius: 4px;
+      background: #1565c0;
+      color: #fff;
+      cursor: pointer;
+      font-size: 15px;
+    }
+
+    .next-year-btn:hover {
+      background: #1976d2;
+    }
+
+    .game-over {
+      text-align: center;
+      margin-top: 10px;
+      font-weight: bold;
+      color: #e53935;
+    }
+  </style>
+</head>
+<body>
+  <div class="game-container">
+    <h1>Mini Life Sim</h1>
+    <div class="stats">
+      <div class="stat" id="ageStat">Age: 0</div>
+      <div class="stat" id="happinessStat">Happiness: 50</div>
+      <div class="stat" id="healthStat">Health: 50</div>
+      <div class="stat" id="moneyStat">Money: $0</div>
+    </div>
+
+    <div class="log" id="log"></div>
+
+    <div class="choices" id="choices"></div>
+
+    <button class="next-year-btn" id="nextYearBtn">Start Life</button>
+    <div class="game-over" id="gameOver" style="display:none;"></div>
+  </div>
+
+  <script>
+    const state = {
+      age: 0,
+      happiness: 50,
+      health: 50,
+      money: 0,
+      alive: true,
+      started: false
+    };
+
+    const events = [
+      {
+        minAge: 0,
+        maxAge: 5,
+        text: "You are a small child. Your parents want to enroll you in a playgroup.",
+        choices: [
+          {
+            text: "Go to playgroup",
+            effects: { happiness: +5, health: 0, money: 0 }
+          },
+          {
+            text: "Stay at home",
+            effects: { happiness: -3, health: 0, money: 0 }
+          }
+        ]
+      },
+      {
+        minAge: 6,
+        maxAge: 12,
+        text: "School time! You have an important test coming up.",
+        choices: [
+          {
+            text: "Study hard",
+            effects: { happiness: -2, health: 0, money: 0 }
+          },
+          {
+            text: "Play video games instead",
+            effects: { happiness: +4, health: -1, money: 0 }
+          }
+        ]
+      },
+      {
+        minAge: 13,
+        maxAge: 18,
+        text: "Your friends invite you to a late-night party.",
+        choices: [
+          {
+            text: "Go to the party",
+            effects: { happiness: +6, health: -4, money: -10 }
+          },
+          {
+            text: "Stay home and rest",
+            effects: { happiness: -2, health: +3, money: 0 }
+          }
+        ]
+      },
+      {
+        minAge: 19,
+        maxAge: 30,
+        text: "You are looking for a job.",
+        choices: [
+          {
+            text: "Take a high-stress, high-paying job",
+            effects: { happiness: -5, health: -3, money: +30 }
+          },
+          {
+            text: "Take a low-stress, low-paying job",
+            effects: { happiness: +3, health: +2, money: +10 }
+          }
+        ]
+      },
+      {
+        minAge: 31,
+        maxAge: 50,
+        text: "You consider starting a side business.",
+        choices: [
+          {
+            text: "Invest your savings",
+            effects: { happiness: +4, health: -1, money: +40 }
+          },
+          {
+            text: "Play it safe",
+            effects: { happiness: 0, health: 0, money: 0 }
+          }
+        ]
+      },
+      {
+        minAge: 51,
+        maxAge: 80,
+        text: "You think about your lifestyle and health.",
+        choices: [
+          {
+            text: "Start exercising regularly",
+            effects: { happiness: +2, health: +8, money: -5 }
+          },
+          {
+            text: "Keep your current habits",
+            effects: { happiness: 0, health: -5, money: 0 }
+          }
+        ]
+      }
+    ];
+
+    const ageStat = document.getElementById("ageStat");
+    const happinessStat = document.getElementById("happinessStat");
+    const healthStat = document.getElementById("healthStat");
+    const moneyStat = document.getElementById("moneyStat");
+    const logEl = document.getElementById("log");
+    const choicesEl = document.getElementById("choices");
+    const nextYearBtn = document.getElementById("nextYearBtn");
+    const gameOverEl = document.getElementById("gameOver");
+
+    function updateStats() {
+      ageStat.textContent = "Age: " + state.age;
+      happinessStat.textContent = "Happiness: " + state.happiness;
+      healthStat.textContent = "Health: " + state.health;
+      moneyStat.textContent = "Money: $" + state.money;
+    }
+
+    function addLog(text) {
+      const entry = document.createElement("div");
+      entry.className = "log-entry";
+      entry.textContent = text;
+      logEl.appendChild(entry);
+      logEl.scrollTop = logEl.scrollHeight;
+    }
+
+    function clearChoices() {
+      choicesEl.innerHTML = "";
+    }
+
+    function getEventForAge(age) {
+      const possible = events.filter(e => age >= e.minAge && age <= e.maxAge);
+      if (possible.length === 0) return null;
+      return possible[Math.floor(Math.random() * possible.length)];
+    }
+
+    function applyEffects(effects) {
+      state.happiness += effects.happiness || 0;
+      state.health += effects.health || 0;
+      state.money += effects.money || 0;
+
+      // Clamp values
+      state.happiness = Math.max(0, Math.min(100, state.happiness));
+      state.health = Math.max(0, Math.min(100, state.health));
+    }
+
+    function checkGameOver() {
+      if (state.health <= 0) {
+        state.alive = false;
+        gameOverEl.style.display = "block";
+        gameOverEl.textContent = "You passed away at age " + state.age + ". Final money: $" + state.money;
+        nextYearBtn.disabled = true;
+        clearChoices();
+        addLog("Your health reached zero. Your life has come to an end.");
+      } else if (state.age >= 90) {
+        state.alive = false;
+        gameOverEl.style.display = "block";
+        gameOverEl.textContent = "You lived a long life and passed away at age " + state.age + ".";
+        nextYearBtn.disabled = true;
+        clearChoices();
+        addLog("You reached old age and peacefully passed away.");
+      }
+    }
+
+    function presentEvent(eventObj) {
+      if (!eventObj) {
+        addLog("Nothing remarkable happened this year.");
+        clearChoices();
+        return;
+      }
+
+      addLog("Event: " + eventObj.text);
+      clearChoices();
+
+      eventObj.choices.forEach(choice => {
+        const btn = document.createElement("button");
+        btn.className = "choice-btn";
+        btn.textContent = choice.text;
+        btn.onclick = () => {
+          addLog("You chose: " + choice.text);
+          applyEffects(choice.effects);
+          updateStats();
+          checkGameOver();
+          clearChoices();
+        };
+        choicesEl.appendChild(btn);
+      });
+    }
+
+    nextYearBtn.addEventListener("click", () => {
+      if (!state.started) {
+        state.started = true;
+        nextYearBtn.textContent = "Next Year";
+        addLog("You were born.");
+      }
+
+      if (!state.alive) return;
+
+      state.age += 1;
+      addLog("You are now " + state.age + " years old.");
+      updateStats();
+
+      // Small passive changes each year
+      state.health -= Math.random() < 0.3 ? 1 : 0;
+      state.happiness -= Math.random() < 0.2 ? 1 : 0;
+
+      updateStats();
+      const eventObj = getEventForAge(state.age);
+      presentEvent(eventObj);
+      checkGameOver();
+    });
+
+    // Initial render
+    updateStats();
+    addLog("Click 'Start Life' to begin.");
+  </script>
+</body>
+</html>
