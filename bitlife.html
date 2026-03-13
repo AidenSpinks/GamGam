@@ -1,342 +1,260 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <title>Mini Life Sim</title>
-  <style>
-    body {
-      font-family: Arial, sans-serif;
-      background: #111;
-      color: #f5f5f5;
-      margin: 0;
-      padding: 0;
-      display: flex;
-      justify-content: center;
-      align-items: flex-start;
-      min-height: 100vh;
-    }
+<meta charset="UTF-8">
+<title>Life Simulator</title>
+<style>
+  body {
+    background: #111;
+    color: #eee;
+    font-family: Arial, sans-serif;
+    display: flex;
+    justify-content: center;
+    padding-top: 30px;
+  }
 
-    .game-container {
-      background: #1b1b1b;
-      margin-top: 40px;
-      padding: 20px;
-      border-radius: 8px;
-      width: 420px;
-      box-shadow: 0 0 10px rgba(0,0,0,0.6);
-    }
+  .container {
+    width: 480px;
+    background: #1c1c1c;
+    padding: 20px;
+    border-radius: 10px;
+  }
 
-    h1 {
-      margin-top: 0;
-      text-align: center;
-    }
+  h1 {
+    text-align: center;
+  }
 
-    .stats {
-      display: flex;
-      justify-content: space-between;
-      margin-bottom: 10px;
-      font-size: 14px;
-    }
+  .stats {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 10px;
+  }
 
-    .stat {
-      padding: 4px 8px;
-      border-radius: 4px;
-      background: #222;
-    }
+  .stat {
+    background: #222;
+    padding: 6px 10px;
+    border-radius: 5px;
+    font-size: 14px;
+  }
 
-    .log {
-      background: #101010;
-      border-radius: 4px;
-      padding: 10px;
-      height: 200px;
-      overflow-y: auto;
-      font-size: 14px;
-      margin-bottom: 10px;
-    }
+  .tabs {
+    display: flex;
+    margin-top: 15px;
+  }
 
-    .log-entry {
-      margin-bottom: 6px;
-    }
+  .tab {
+    flex: 1;
+    padding: 10px;
+    background: #222;
+    text-align: center;
+    cursor: pointer;
+    border-right: 1px solid #333;
+  }
 
-    .choices {
-      margin-top: 10px;
-    }
+  .tab:last-child {
+    border-right: none;
+  }
 
-    .choice-btn {
-      display: block;
-      width: 100%;
-      margin-bottom: 6px;
-      padding: 8px;
-      border: none;
-      border-radius: 4px;
-      background: #2e7d32;
-      color: #fff;
-      cursor: pointer;
-      font-size: 14px;
-      text-align: left;
-    }
+  .tab.active {
+    background: #444;
+  }
 
-    .choice-btn:hover {
-      background: #388e3c;
-    }
+  .tab-content {
+    margin-top: 15px;
+    background: #101010;
+    padding: 15px;
+    border-radius: 8px;
+    min-height: 150px;
+  }
 
-    .next-year-btn {
-      width: 100%;
-      padding: 10px;
-      margin-top: 8px;
-      border: none;
-      border-radius: 4px;
-      background: #1565c0;
-      color: #fff;
-      cursor: pointer;
-      font-size: 15px;
-    }
+  button {
+    width: 100%;
+    padding: 10px;
+    margin-top: 8px;
+    border: none;
+    border-radius: 5px;
+    background: #1565c0;
+    color: white;
+    cursor: pointer;
+  }
 
-    .next-year-btn:hover {
-      background: #1976d2;
-    }
+  button:hover {
+    background: #1e7be0;
+  }
 
-    .game-over {
-      text-align: center;
-      margin-top: 10px;
-      font-weight: bold;
-      color: #e53935;
-    }
-  </style>
+  .choice-btn {
+    background: #2e7d32;
+  }
+
+  .choice-btn:hover {
+    background: #3fa447;
+  }
+
+  .log {
+    background: #000;
+    padding: 10px;
+    height: 150px;
+    overflow-y: auto;
+    border-radius: 5px;
+    margin-top: 10px;
+    font-size: 14px;
+  }
+</style>
 </head>
 <body>
-  <div class="game-container">
-    <h1>Mini Life Sim</h1>
-    <div class="stats">
-      <div class="stat" id="ageStat">Age: 0</div>
-      <div class="stat" id="happinessStat">Happiness: 50</div>
-      <div class="stat" id="healthStat">Health: 50</div>
-      <div class="stat" id="moneyStat">Money: $0</div>
-    </div>
 
-    <div class="log" id="log"></div>
+<div class="container">
+  <h1>Life Simulator</h1>
 
-    <div class="choices" id="choices"></div>
-
-    <button class="next-year-btn" id="nextYearBtn">Start Life</button>
-    <div class="game-over" id="gameOver" style="display:none;"></div>
+  <div class="stats">
+    <div class="stat" id="ageStat">Age: 0</div>
+    <div class="stat" id="healthStat">Health: 50</div>
+    <div class="stat" id="happyStat">Happiness: 50</div>
+    <div class="stat" id="moneyStat">Money: $0</div>
   </div>
 
-  <script>
-    const state = {
-      age: 0,
-      happiness: 50,
-      health: 50,
-      money: 0,
-      alive: true,
-      started: false
-    };
+  <!-- Tabs -->
+  <div class="tabs">
+    <div class="tab active" data-tab="ageTab">Age</div>
+    <div class="tab" data-tab="actionsTab">Actions</div>
+    <div class="tab" data-tab="jobsTab">Jobs</div>
+    <div class="tab" data-tab="relationshipsTab">Relationships</div>
+  </div>
 
-    const events = [
-      {
-        minAge: 0,
-        maxAge: 5,
-        text: "You are a small child. Your parents want to enroll you in a playgroup.",
-        choices: [
-          {
-            text: "Go to playgroup",
-            effects: { happiness: +5, health: 0, money: 0 }
-          },
-          {
-            text: "Stay at home",
-            effects: { happiness: -3, health: 0, money: 0 }
-          }
-        ]
-      },
-      {
-        minAge: 6,
-        maxAge: 12,
-        text: "School time! You have an important test coming up.",
-        choices: [
-          {
-            text: "Study hard",
-            effects: { happiness: -2, health: 0, money: 0 }
-          },
-          {
-            text: "Play video games instead",
-            effects: { happiness: +4, health: -1, money: 0 }
-          }
-        ]
-      },
-      {
-        minAge: 13,
-        maxAge: 18,
-        text: "Your friends invite you to a late-night party.",
-        choices: [
-          {
-            text: "Go to the party",
-            effects: { happiness: +6, health: -4, money: -10 }
-          },
-          {
-            text: "Stay home and rest",
-            effects: { happiness: -2, health: +3, money: 0 }
-          }
-        ]
-      },
-      {
-        minAge: 19,
-        maxAge: 30,
-        text: "You are looking for a job.",
-        choices: [
-          {
-            text: "Take a high-stress, high-paying job",
-            effects: { happiness: -5, health: -3, money: +30 }
-          },
-          {
-            text: "Take a low-stress, low-paying job",
-            effects: { happiness: +3, health: +2, money: +10 }
-          }
-        ]
-      },
-      {
-        minAge: 31,
-        maxAge: 50,
-        text: "You consider starting a side business.",
-        choices: [
-          {
-            text: "Invest your savings",
-            effects: { happiness: +4, health: -1, money: +40 }
-          },
-          {
-            text: "Play it safe",
-            effects: { happiness: 0, health: 0, money: 0 }
-          }
-        ]
-      },
-      {
-        minAge: 51,
-        maxAge: 80,
-        text: "You think about your lifestyle and health.",
-        choices: [
-          {
-            text: "Start exercising regularly",
-            effects: { happiness: +2, health: +8, money: -5 }
-          },
-          {
-            text: "Keep your current habits",
-            effects: { happiness: 0, health: -5, money: 0 }
-          }
-        ]
-      }
-    ];
+  <!-- Tab Content -->
+  <div class="tab-content" id="ageTab">
+    <button id="nextYearBtn">Start Life</button>
+  </div>
 
-    const ageStat = document.getElementById("ageStat");
-    const happinessStat = document.getElementById("happinessStat");
-    const healthStat = document.getElementById("healthStat");
-    const moneyStat = document.getElementById("moneyStat");
-    const logEl = document.getElementById("log");
-    const choicesEl = document.getElementById("choices");
-    const nextYearBtn = document.getElementById("nextYearBtn");
-    const gameOverEl = document.getElementById("gameOver");
+  <div class="tab-content" id="actionsTab" style="display:none;">
+    <button class="choice-btn" onclick="doAction('study')">Study (+Happiness -2, +Health 0)</button>
+    <button class="choice-btn" onclick="doAction('workout')">Work Out (+Health 5, -Happiness 1)</button>
+    <button class="choice-btn" onclick="doAction('meditate')">Meditate (+Happiness 4)</button>
+  </div>
 
-    function updateStats() {
-      ageStat.textContent = "Age: " + state.age;
-      happinessStat.textContent = "Happiness: " + state.happiness;
-      healthStat.textContent = "Health: " + state.health;
-      moneyStat.textContent = "Money: $" + state.money;
-    }
+  <div class="tab-content" id="jobsTab" style="display:none;">
+    <div id="jobStatus">You are unemployed.</div>
+    <button onclick="applyForJob('Retail Worker', 15000)">Apply: Retail Worker ($15k/yr)</button>
+    <button onclick="applyForJob('Office Assistant', 25000)">Apply: Office Assistant ($25k/yr)</button>
+    <button onclick="applyForJob('Software Developer', 60000)">Apply: Software Developer ($60k/yr)</button>
+  </div>
 
-    function addLog(text) {
-      const entry = document.createElement("div");
-      entry.className = "log-entry";
-      entry.textContent = text;
-      logEl.appendChild(entry);
-      logEl.scrollTop = logEl.scrollHeight;
-    }
+  <div class="tab-content" id="relationshipsTab" style="display:none;">
+    <div id="relationshipList">No relationships yet.</div>
+    <button onclick="meetPerson()">Meet Someone</button>
+  </div>
 
-    function clearChoices() {
-      choicesEl.innerHTML = "";
-    }
+  <div class="log" id="log"></div>
+</div>
 
-    function getEventForAge(age) {
-      const possible = events.filter(e => age >= e.minAge && age <= e.maxAge);
-      if (possible.length === 0) return null;
-      return possible[Math.floor(Math.random() * possible.length)];
-    }
+<script>
+let state = {
+  age: 0,
+  health: 50,
+  happiness: 50,
+  money: 0,
+  job: null,
+  salary: 0,
+  relationships: []
+};
 
-    function applyEffects(effects) {
-      state.happiness += effects.happiness || 0;
-      state.health += effects.health || 0;
-      state.money += effects.money || 0;
+function updateStats() {
+  document.getElementById("ageStat").textContent = "Age: " + state.age;
+  document.getElementById("healthStat").textContent = "Health: " + state.health;
+  document.getElementById("happyStat").textContent = "Happiness: " + state.happiness;
+  document.getElementById("moneyStat").textContent = "Money: $" + state.money;
+}
 
-      // Clamp values
-      state.happiness = Math.max(0, Math.min(100, state.happiness));
-      state.health = Math.max(0, Math.min(100, state.health));
-    }
+function log(msg) {
+  const logBox = document.getElementById("log");
+  logBox.innerHTML += `<div>${msg}</div>`;
+  logBox.scrollTop = logBox.scrollHeight;
+}
 
-    function checkGameOver() {
-      if (state.health <= 0) {
-        state.alive = false;
-        gameOverEl.style.display = "block";
-        gameOverEl.textContent = "You passed away at age " + state.age + ". Final money: $" + state.money;
-        nextYearBtn.disabled = true;
-        clearChoices();
-        addLog("Your health reached zero. Your life has come to an end.");
-      } else if (state.age >= 90) {
-        state.alive = false;
-        gameOverEl.style.display = "block";
-        gameOverEl.textContent = "You lived a long life and passed away at age " + state.age + ".";
-        nextYearBtn.disabled = true;
-        clearChoices();
-        addLog("You reached old age and peacefully passed away.");
-      }
-    }
+/* ---------------- TAB SWITCHING ---------------- */
+document.querySelectorAll(".tab").forEach(tab => {
+  tab.addEventListener("click", () => {
+    document.querySelectorAll(".tab").forEach(t => t.classList.remove("active"));
+    tab.classList.add("active");
 
-    function presentEvent(eventObj) {
-      if (!eventObj) {
-        addLog("Nothing remarkable happened this year.");
-        clearChoices();
-        return;
-      }
+    document.querySelectorAll(".tab-content").forEach(c => c.style.display = "none");
+    document.getElementById(tab.dataset.tab).style.display = "block";
+  });
+});
 
-      addLog("Event: " + eventObj.text);
-      clearChoices();
+/* ---------------- AGE PROGRESSION ---------------- */
+document.getElementById("nextYearBtn").addEventListener("click", () => {
+  state.age++;
+  log(`You are now ${state.age} years old.`);
 
-      eventObj.choices.forEach(choice => {
-        const btn = document.createElement("button");
-        btn.className = "choice-btn";
-        btn.textContent = choice.text;
-        btn.onclick = () => {
-          addLog("You chose: " + choice.text);
-          applyEffects(choice.effects);
-          updateStats();
-          checkGameOver();
-          clearChoices();
-        };
-        choicesEl.appendChild(btn);
-      });
-    }
+  // yearly salary
+  if (state.job) {
+    state.money += state.salary;
+    log(`You earned $${state.salary} from your job as a ${state.job}.`);
+  }
 
-    nextYearBtn.addEventListener("click", () => {
-      if (!state.started) {
-        state.started = true;
-        nextYearBtn.textContent = "Next Year";
-        addLog("You were born.");
-      }
+  // passive aging effects
+  state.health -= Math.random() < 0.3 ? 1 : 0;
+  state.happiness -= Math.random() < 0.2 ? 1 : 0;
 
-      if (!state.alive) return;
+  updateStats();
+});
 
-      state.age += 1;
-      addLog("You are now " + state.age + " years old.");
-      updateStats();
+/* ---------------- ACTIONS TAB ---------------- */
+function doAction(type) {
+  if (type === "study") {
+    state.happiness -= 2;
+    log("You studied hard.");
+  }
+  if (type === "workout") {
+    state.health += 5;
+    state.happiness -= 1;
+    log("You worked out.");
+  }
+  if (type === "meditate") {
+    state.happiness += 4;
+    log("You meditated.");
+  }
+  updateStats();
+}
 
-      // Small passive changes each year
-      state.health -= Math.random() < 0.3 ? 1 : 0;
-      state.happiness -= Math.random() < 0.2 ? 1 : 0;
+/* ---------------- JOBS TAB ---------------- */
+function applyForJob(title, salary) {
+  const success = Math.random() < 0.7;
+  if (success) {
+    state.job = title;
+    state.salary = salary;
+    document.getElementById("jobStatus").textContent = `Employed as: ${title}`;
+    log(`You got the job: ${title}!`);
+  } else {
+    log(`You were rejected for the ${title} job.`);
+  }
+}
 
-      updateStats();
-      const eventObj = getEventForAge(state.age);
-      presentEvent(eventObj);
-      checkGameOver();
-    });
+/* ---------------- RELATIONSHIPS TAB ---------------- */
+function meetPerson() {
+  const names = ["Alex", "Jordan", "Taylor", "Sam", "Casey", "Morgan"];
+  const name = names[Math.floor(Math.random() * names.length)];
 
-    // Initial render
-    updateStats();
-    addLog("Click 'Start Life' to begin.");
-  </script>
+  const person = {
+    name,
+    relationship: Math.floor(Math.random() * 40) + 10
+  };
+
+  state.relationships.push(person);
+  updateRelationships();
+  log(`You met ${name}.`);
+}
+
+function updateRelationships() {
+  const list = document.getElementById("relationshipList");
+  list.innerHTML = state.relationships
+    .map(r => `${r.name} — Relationship: ${r.relationship}`)
+    .join("<br>");
+}
+
+updateStats();
+</script>
+
 </body>
 </html>
