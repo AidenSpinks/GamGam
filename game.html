@@ -1,0 +1,394 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Pancake Night</title>
+<style>
+  body { margin:0; background:#000; color:#fff; font-family:Arial; }
+  #game { width:960px; height:540px; margin:20px auto; border:2px solid #444; position:relative; background:#111; overflow:hidden; }
+
+  #top-bar { position:absolute; top:8px; left:8px; right:8px; display:flex; justify-content:space-between; font-size:18px; }
+  #camera-name { font-weight:bold; }
+
+  #controls { position:absolute; bottom:8px; left:8px; right:8px; display:flex; justify-content:space-between; font-size:14px; }
+  .btn-group button { margin-right:4px; padding:4px 8px; background:#222; color:#fff; border:1px solid #555; cursor:pointer; }
+  .btn-group button:hover { background:#333; }
+
+  #view { position:absolute; top:40px; left:0; right:0; bottom:60px; }
+  .view-screen { width:100%; height:100%; display:none; position:relative; }
+  .view-screen.active { display:block; }
+
+  /* Office */
+  #office { background:#141428; }
+  #office-window { position:absolute; right:40px; top:80px; width:240px; height:320px; border:2px solid #666; background:#222; }
+  #office-window-label { position:absolute; top:4px; left:8px; font-size:14px; }
+  #pancakeman-office { position:absolute; bottom:0; left:20px; width:200px; display:none; }
+
+  /* Phone + mask */
+  #phone-btn { position:absolute; left:40px; top:300px; width:120px; cursor:pointer; border:2px solid #aaa; }
+  #mask-indicator { position:absolute; top:80px; left:40px; font-size:20px; color:#0f0; display:none; }
+
+  /* Prize Corner */
+  #prize { background:#2a1010; }
+  #prize-counter { position:absolute; left:100px; top:180px; width:300px; height:180px; background:#552222; border:2px solid #aa4444; }
+  #pancakeman-prize { position:absolute; right:120px; bottom:40px; width:200px; display:none; }
+  #deliver-btn { position:absolute; left:120px; top:320px; padding:6px 12px; background:#0a7a0a; border:1px solid #0f0; cursor:pointer; }
+
+  /* Kitchen */
+  #kitchen { background:#102410; }
+  #stove { position:absolute; left:150px; top:220px; width:260px; height:160px; background:#777; border:2px solid #aaa; }
+  #cook-btn { position:absolute; left:160px; top:260px; padding:6px 12px; background:#444; border:1px solid #ccc; cursor:pointer; }
+
+  /* Pancake status */
+  #pancake-status { position:absolute; top:80px; left:80px; font-size:16px; }
+  #pancake-icon { position:absolute; top:70px; left:220px; width:80px; height:80px; object-fit:contain; filter:grayscale(100%) brightness(40%); }
+  #pancake-icon.cooked { filter:none; }
+
+  /* PhoneMan path indicators */
+  #phoneman-stage, #phoneman-party, #phoneman-left, #phoneman-right, #phoneman-vent-left, #phoneman-vent-right {
+    position:absolute; width:180px; display:none;
+  }
+
+  /* Game over */
+  #game-over { position:absolute; inset:0; background:rgba(0,0,0,0.9); display:none; align-items:center; justify-content:center; flex-direction:column; text-align:center; }
+  #game-over h1 { color:#f00; margin-bottom:10px; }
+  #game-over button { margin-top:10px; padding:6px 12px; background:#222; color:#fff; border:1px solid #555; cursor:pointer; }
+</style>
+</head>
+<body>
+
+<div id="game">
+
+  <div id="top-bar">
+    <div id="camera-name">Camera: Office</div>
+    <div id="night-clock">12:00 AM</div>
+  </div>
+
+  <div id="view">
+
+    <!-- OFFICE -->
+    <div id="office" class="view-screen active">
+      <div id="office-window">
+        <div id="office-window-label">Window</div>
+        <img id="pancakeman-office" src="pancakeman.png">
+      </div>
+
+      <img id="phone-btn" src="phone.jpg">
+      <div id="mask-indicator">MASK ON</div>
+
+      <!-- PhoneMan vent jumpscare -->
+      <img id="phoneman-vent-left" src="phoneman.png" style="left:0; bottom:0;">
+      <img id="phoneman-vent-right" src="phoneman.png" style="right:0; bottom:0;">
+    </div>
+
+    <!-- PRIZE CORNER -->
+    <div id="prize" class="view-screen">
+      <div id="prize-counter"></div>
+      <img id="pancakeman-prize" src="pancakeman.png">
+      <button id="deliver-btn">Deliver Pancakes</button>
+      <div id="pancake-status">Pancake Status:</div>
+      <img id="pancake-icon" src="pancakes.jpg">
+    </div>
+
+    <!-- KITCHEN -->
+    <div id="kitchen" class="view-screen">
+      <div id="stove"></div>
+      <button id="cook-btn">Cook Pancakes</button>
+      <div id="pancake-status">Pancake Status:</div>
+      <img id="pancake-icon" src="pancakes.jpg">
+    </div>
+
+    <!-- PHONEMAN CAMERAS -->
+    <div id="party" class="view-screen">
+      <img id="phoneman-party" src="phoneman.png" style="left:200px; bottom:40px;">
+    </div>
+
+    <div id="left-hall" class="view-screen">
+      <img id="phoneman-left" src="phoneman.png" style="left:40px; bottom:40px;">
+    </div>
+
+    <div id="right-hall" class="view-screen">
+      <img id="phoneman-right" src="phoneman.png" style="right:40px; bottom:40px;">
+    </div>
+
+    <div id="stage" class="view-screen">
+      <img id="phoneman-stage" src="phoneman.png" style="left:200px; bottom:40px;">
+    </div>
+
+  </div>
+
+  <div id="controls">
+    <div class="btn-group">
+      <button data-cam="office">Office</button>
+      <button data-cam="prize">Prize</button>
+      <button data-cam="kitchen">Kitchen</button>
+      <button data-cam="stage">Stage</button>
+      <button data-cam="party">Party</button>
+      <button data-cam="left-hall">Left Hall</button>
+      <button data-cam="right-hall">Right Hall</button>
+    </div>
+    <div>Shift = Mask</div>
+  </div>
+
+  <div id="game-over">
+    <h1>GAME OVER</h1>
+    <p id="game-over-reason"></p>
+    <button id="restart-btn">Restart</button>
+  </div>
+
+</div>
+
+<script>
+/* ===========================
+   GAME STATE
+=========================== */
+
+let currentCamera = "office";
+let hasCookedPancake = false;
+let gameOver = false;
+
+/* PancakeMan */
+let pancakemanAtWindow = false;
+let pancakeWindowStart = null;
+const WINDOW_LIMIT = 10000;
+
+/* PhoneMan */
+let phonemanStage = true;
+let phonemanParty = false;
+let phonemanLeft = false;
+let phonemanRight = false;
+let phonemanVentLeft = false;
+let phonemanVentRight = false;
+let phonemanVentStart = null;
+const VENT_KILL_TIME = 3000;
+
+/* Mask */
+let maskOn = false;
+
+/* Night Clock */
+let nightTime = 0;
+let nightInterval = null;
+
+/* DOM */
+const camButtons = document.querySelectorAll("[data-cam]");
+const cameraName = document.getElementById("camera-name");
+const nightClock = document.getElementById("night-clock");
+
+const pancakeIcon = document.querySelectorAll("#pancake-icon");
+const deliverBtn = document.getElementById("deliver-btn");
+const cookBtn = document.getElementById("cook-btn");
+
+const pancakemanOffice = document.getElementById("pancakeman-office");
+const pancakemanPrize = document.getElementById("pancakeman-prize");
+
+const phoneBtn = document.getElementById("phone-btn");
+const maskIndicator = document.getElementById("mask-indicator");
+
+const phonemanStageImg = document.getElementById("phoneman-stage");
+const phonemanPartyImg = document.getElementById("phoneman-party");
+const phonemanLeftImg = document.getElementById("phoneman-left");
+const phonemanRightImg = document.getElementById("phoneman-right");
+const phonemanVentLeftImg = document.getElementById("phoneman-vent-left");
+const phonemanVentRightImg = document.getElementById("phoneman-vent-right");
+
+const gameOverScreen = document.getElementById("game-over");
+const gameOverReason = document.getElementById("game-over-reason");
+const restartBtn = document.getElementById("restart-btn");
+
+/* ===========================
+   CAMERA SWITCHING
+=========================== */
+function setCamera(cam) {
+  currentCamera = cam;
+  document.querySelectorAll(".view-screen").forEach(v => v.classList.remove("active"));
+  document.getElementById(cam).classList.add("active");
+  cameraName.textContent = "Camera: " + cam.replace("-", " ");
+}
+
+/* ===========================
+   PANCAKE ICON
+=========================== */
+function updatePancakeIcon() {
+  pancakeIcon.forEach(i => {
+    if (hasCookedPancake) i.classList.add("cooked");
+    else i.classList.remove("cooked");
+  });
+}
+
+/* ===========================
+   PANCAKEMAN LOGIC
+=========================== */
+let nextPancakeMove = Date.now() + 8000;
+
+function updatePancakeMan() {
+  const now = Date.now();
+
+  if (!pancakemanAtWindow && now >= nextPancakeMove) {
+    if (Math.random() < 0.7) {
+      pancakemanAtWindow = true;
+      pancakeWindowStart = now;
+    }
+    nextPancakeMove = now + 10000 + Math.random() * 8000;
+  }
+
+  if (pancakemanAtWindow && now - pancakeWindowStart > WINDOW_LIMIT) {
+    triggerGameOver("PancakeMan got you!");
+  }
+
+  pancakemanOffice.style.display = pancakemanAtWindow ? "block" : "none";
+  pancakemanPrize.style.display = pancakemanAtWindow ? "none" : "block";
+}
+
+/* ===========================
+   PHONEMAN LOGIC
+=========================== */
+let nextPhoneMove = Date.now() + 6000;
+
+function updatePhoneMan() {
+  const now = Date.now();
+
+  if (phonemanVentLeft || phonemanVentRight) {
+    if (!maskOn && now - phonemanVentStart > VENT_KILL_TIME) {
+      triggerGameOver("PhoneMan crawled through the vent!");
+    }
+    return;
+  }
+
+  if (now >= nextPhoneMove) {
+    if (phonemanStage) {
+      phonemanStage = false;
+      phonemanParty = true;
+    } else if (phonemanParty) {
+      if (Math.random() < 0.5) {
+        phonemanParty = false;
+        phonemanLeft = true;
+      } else {
+        phonemanParty = false;
+        phonemanRight = true;
+      }
+    } else if (phonemanLeft) {
+      phonemanLeft = false;
+      phonemanVentLeft = true;
+      phonemanVentStart = now;
+    } else if (phonemanRight) {
+      phonemanRight = false;
+      phonemanVentRight = true;
+      phonemanVentStart = now;
+    }
+
+    nextPhoneMove = now + 6000 + Math.random() * 6000;
+  }
+
+  phonemanStageImg.style.display = phonemanStage ? "block" : "none";
+  phonemanPartyImg.style.display = phonemanParty ? "block" : "none";
+  phonemanLeftImg.style.display = phonemanLeft ? "block" : "none";
+  phonemanRightImg.style.display = phonemanRight ? "block" : "none";
+  phonemanVentLeftImg.style.display = phonemanVentLeft ? "block" : "none";
+  phonemanVentRightImg.style.display = phonemanVentRight ? "block" : "none";
+}
+
+/* ===========================
+   PHONE BUTTON
+=========================== */
+phoneBtn.onclick = () => {
+  if (gameOver) return;
+
+  phonemanStage = true;
+  phonemanParty = false;
+  phonemanLeft = false;
+  phonemanRight = false;
+  phonemanVentLeft = false;
+  phonemanVentRight = false;
+
+  updatePhoneMan();
+};
+
+/* ===========================
+   MASK
+=========================== */
+document.addEventListener("keydown", e => {
+  if (e.key === "Shift") {
+    maskOn = true;
+    maskIndicator.style.display = "block";
+  }
+});
+document.addEventListener("keyup", e => {
+  if (e.key === "Shift") {
+    maskOn = false;
+    maskIndicator.style.display = "none";
+  }
+});
+
+/* ===========================
+   COOK / DELIVER
+=========================== */
+cookBtn.onclick = () => {
+  if (currentCamera === "kitchen") {
+    hasCookedPancake = true;
+    updatePancakeIcon();
+  }
+};
+
+deliverBtn.onclick = () => {
+  if (currentCamera === "prize" && hasCookedPancake) {
+    if (pancakemanAtWindow) {
+      pancakemanAtWindow = false;
+      pancakeWindowStart = null;
+    }
+    hasCookedPancake = false;
+    updatePancakeIcon();
+  }
+};
+
+/* ===========================
+   NIGHT CLOCK
+=========================== */
+function startNightClock() {
+  nightInterval = setInterval(() => {
+    nightTime += 1;
+    const hour = Math.floor(nightTime / 60);
+    const minute = nightTime % 60;
+
+    const displayHour = hour === 0 ? "12" : hour;
+    const displaySuffix = hour < 6 ? "AM" : "AM";
+
+    nightClock.textContent = `${displayHour}:${minute.toString().padStart(2,"0")} ${displaySuffix}`;
+
+    if (hour >= 6) {
+      triggerGameOver("You survived until 6 AM!");
+    }
+  }, 1000);
+}
+
+/* ===========================
+   GAME OVER
+=========================== */
+function triggerGameOver(reason) {
+  gameOver = true;
+  gameOverReason.textContent = reason;
+  gameOverScreen.style.display = "flex";
+}
+
+restartBtn.onclick = () => location.reload();
+
+/* ===========================
+   MAIN LOOP
+=========================== */
+camButtons.forEach(btn => btn.onclick = () => setCamera(btn.dataset.cam));
+
+setCamera("office");
+updatePancakeIcon();
+startNightClock();
+
+function loop() {
+  if (!gameOver) {
+    updatePancakeMan();
+    updatePhoneMan();
+  }
+  requestAnimationFrame(loop);
+}
+loop();
+</script>
+
+</body>
+</html>
